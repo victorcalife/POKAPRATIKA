@@ -46,7 +46,6 @@ h2 { font-size: 1rem; letter-spacing: -.02em; }
 .alert { width: 100%; background: rgba(255, 87, 87, .16); border: 1px solid rgba(255, 87, 87, .3); text-align: left; }
 .mini-loading { font-size: .78rem; color: #3b82f6; }
 .context-row { display: flex; gap: 8px; align-items: center; min-height: 36px; }
-.schedule-toolbar { justify-content: flex-end; min-height: 32px; }
 select, input { width: 100%; min-height: 38px; color: #f5fbf7; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.13); border-radius: 12px; padding: 8px 10px; outline: none; }
 select option, select optgroup { color: #000; background: #fff; }
 textarea { width: 100%; min-height: 120px; color: #f5fbf7; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.13); border-radius: 12px; padding: 8px 10px; outline: none; resize: vertical; }
@@ -300,7 +299,6 @@ textarea { width: 100%; min-height: 120px; color: #f5fbf7; background: rgba(255,
   .profile-pill { flex-wrap: wrap; justify-content: flex-end; }
   .account-menu { position: fixed; top: 76px; right: 8px; left: auto; }
   .context-row { overflow: auto; }
-  .schedule-toolbar { justify-content: flex-start; }
   .prompt-modal { padding-top: 78px; }
   .schedule-list { grid-template-columns: 1fr; }
   .match-scoreline { grid-template-columns: 1fr auto 1fr; }

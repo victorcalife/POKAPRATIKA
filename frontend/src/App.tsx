@@ -244,6 +244,8 @@ export function App() {
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
   const [awardSettingsOpen, setAwardSettingsOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const canCoordinate = auth?.user.role === 'ADMIN' || auth?.user.role === 'COORDENADOR';
   const isAdmin = auth?.user.role === 'ADMIN';
   const activeSeason = seasons.find((season) => season.id === activeSeasonId) ?? seasons.find((season) => season.status === 'OPEN') ?? seasons[0];
@@ -299,6 +301,35 @@ export function App() {
     }).catch((err) => setError(err instanceof Error ? err.message : 'Falha ao trocar temporada.'));
   }, [activeSeasonId]);
 
+  useEffect(() => {
+    if (!auth || !activeSeasonId) return;
+    const timer = window.setInterval(() => {
+      api.request<MatchListItem[]>(`/matches?seasonId=${activeSeasonId}`)
+        .then(setMatches)
+        .catch(() => undefined);
+    }, 60000);
+    return () => window.clearInterval(timer);
+  }, [api, auth?.token, activeSeasonId]);
+
+  useEffect(() => {
+    if (!accountMenuOpen) return;
+
+    function closeOnOutside(event: PointerEvent) {
+      if (!accountMenuRef.current?.contains(event.target as Node)) setAccountMenuOpen(false);
+    }
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') setAccountMenuOpen(false);
+    }
+
+    document.addEventListener('pointerdown', closeOnOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutside);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [accountMenuOpen]);
+
   function saveAuth(payload: AuthPayload) {
     localStorage.setItem(storageKey, JSON.stringify(payload));
     setAuth(payload);
@@ -331,7 +362,7 @@ export function App() {
             <h1>POKA PRÁTIKA</h1>
           </div>
         </div>
-        <div className="profile-pill account-area">
+        <div className="profile-pill account-area" ref={accountMenuRef}>
           <button className="profile-trigger" onClick={() => canCoordinate ? setAccountMenuOpen((value) => !value) : setProfileUserId(auth.user.id)} title={canCoordinate ? 'Abrir menu' : 'Abrir perfil'}>
                 {auth.user.avatarDataUrl ? <img src={auth.user.avatarDataUrl} alt="Avatar" /> : <span>{auth.user.name.slice(0, 1)}</span>}
             <div>
@@ -340,9 +371,11 @@ export function App() {
             </div>
           </button>
           {!canCoordinate && <button className="ghost" onClick={() => { localStorage.removeItem(storageKey); setAuth(null); }}>Sair</button>}
-          {canCoordinate && accountMenuOpen && <div className="account-menu"><button onClick={() => { setView('temporada'); setAccountMenuOpen(false); }}>Temporada</button><button onClick={() => { setView('pagamentos'); setAccountMenuOpen(false); }}>Mensalidades</button><button onClick={() => { setView('premios'); setAccountMenuOpen(false); }}>Prêmios</button><button onClick={() => { setView('admin'); setAccountMenuOpen(false); }}>Config.</button><button onClick={() => { setProfileUserId(auth.user.id); setAccountMenuOpen(false); }}>Meu perfil</button><button onClick={() => { setChangePasswordOpen(true); setAccountMenuOpen(false); }}>Trocar senha</button><button className="danger-menu" onClick={() => { localStorage.removeItem(storageKey); setAuth(null); }}>Sair</button></div>}
+          {canCoordinate && accountMenuOpen && <div className="account-menu"><button onClick={() => { setView('temporada'); setAccountMenuOpen(false); }}>Temporada</button><button onClick={() => { setView('pagamentos'); setAccountMenuOpen(false); }}>Mensalidades</button><button onClick={() => { setView('premios'); setAccountMenuOpen(false); }}>Prêmios</button><button onClick={() => { setView('admin'); setAccountMenuOpen(false); }}>Config.</button><button onClick={() => { setScheduleDialogOpen(true); setAccountMenuOpen(false); }}>Agenda</button><button onClick={() => { setProfileUserId(auth.user.id); setAccountMenuOpen(false); }}>Meu perfil</button><button onClick={() => { setChangePasswordOpen(true); setAccountMenuOpen(false); }}>Trocar senha</button><button className="danger-menu" onClick={() => { localStorage.removeItem(storageKey); setAuth(null); }}>Sair</button></div>}
         </div>
       </header>
+
+      {canCoordinate && <ScheduleManagerDialog api={api} matches={matches} activeSeasonId={activeSeasonId} onDone={loadData} controlledOpen={scheduleDialogOpen} onOpenChange={setScheduleDialogOpen} hideTrigger />}
 
       {changePasswordOpen && <ChangePasswordDialog api={api} onClose={() => setChangePasswordOpen(false)} />}
       {profileUserId && <div className="modal profile-modal"><div className="profile-modal-card"><div className="card-head"><h2>Perfil do atleta</h2><div className="actions">{profileUserId === auth.user.id && <button className="ghost" onClick={() => { setProfileUserId(null); setChangePasswordOpen(true); }}>Trocar senha</button>}<button className="ghost" onClick={() => setProfileUserId(null)}>Fechar</button></div></div><ProfilesPanel api={api} users={users} currentUserId={auth.user.id} initialUserId={profileUserId} onCurrentUserUpdated={updateAuthenticatedUser} /></div></div>}
@@ -358,8 +391,6 @@ export function App() {
         <span className={`status ${activeSeason?.status?.toLowerCase()}`}>{activeSeason?.status ?? 'sem temporada'}</span>
         {suspensions.length > 0 && <span className="status danger">{suspensions.length} suspensão(ões)</span>}
       </section>
-      {canCoordinate && <section className="context-row schedule-toolbar"><ScheduleManagerDialog api={api} matches={matches} activeSeasonId={activeSeasonId} onDone={loadData} /></section>}
-
         {view === 'temporada' && <div className="home-stack season-home"><SeasonPanel standings={standings} rankings={rankings} onOpenProfile={setProfileUserId} /><div className="season-lower"><MatchesPanel api={api} canCoordinate={canCoordinate} users={users} matches={matches} activeSeasonId={activeSeasonId} currentUserId={auth.user.id} onReload={loadData} selectedMatch={selectedMatch} setSelectedMatch={setSelectedMatch} /><SuspensionsPanel api={api} suspensions={suspensions} matches={matches} canCoordinate={canCoordinate} onReload={loadData} /></div></div>}
       {view === 'pagamentos' && <PaymentsPanel api={api} canCoordinate={canCoordinate} users={users} activeSeasonId={activeSeasonId} />}
       {view === 'premios' && <div className="home-stack"><div className="card compact"><div className="card-head"><div><h2>Central de prêmios</h2><p className="muted">Votação, rankings, badges e regras configuráveis do ferino.</p></div>{canCoordinate && <button className="primary small" onClick={() => setAwardSettingsOpen(true)}>Configurar regras e prêmios</button>}</div></div><AwardsPanel api={api} users={users} activeSeason={activeSeason} isAdmin={isAdmin} /><AwardLeaderboardsPanel api={api} activeSeason={activeSeason} /></div>}
@@ -1000,8 +1031,10 @@ function CorrectionHistory({ corrections }: { corrections: MatchCorrection[] }) 
   return <div className="audit-box"><strong>Histórico de correções</strong>{corrections.map((item) => <article className="row-card" key={item.id}><strong>{item.previousTeamAScore} x {item.previousTeamBScore} → {item.newTeamAScore} x {item.newTeamBScore}</strong><span>{item.correctedByName}</span><small>{new Date(item.createdAt).toLocaleString('pt-BR')} • {item.reason}</small><small>Eventos: {item.previousEvents.length} → {item.newEvents.length}</small></article>)}</div>;
 }
 
-function ScheduleManagerDialog({ api, matches, activeSeasonId, onDone }: { api: ApiClient; matches: MatchListItem[]; activeSeasonId: string; onDone: () => Promise<void> }) {
-  const [open, setOpen] = useState(false);
+function ScheduleManagerDialog({ api, matches, activeSeasonId, onDone, controlledOpen, onOpenChange, hideTrigger = false }: { api: ApiClient; matches: MatchListItem[]; activeSeasonId: string; onDone: () => Promise<void>; controlledOpen?: boolean; onOpenChange?: (open: boolean) => void; hideTrigger?: boolean }) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = controlledOpen ?? internalOpen;
+  const setOpen = onOpenChange ?? setInternalOpen;
   const [mode, setMode] = useState<ScheduleMode>('recurring');
   const [editingId, setEditingId] = useState('');
   const [message, setMessage] = useState('');
@@ -1063,7 +1096,7 @@ function ScheduleManagerDialog({ api, matches, activeSeasonId, onDone }: { api: 
 
   return (
     <>
-      <button className="ghost small" onClick={() => setOpen(true)}>Agenda</button>
+      {!hideTrigger && <button className="ghost small" onClick={() => setOpen(true)}>Agenda</button>}
       {open && <div className="modal">
         <section className="card modal-card wide schedule-modal">
           <div className="card-head">
