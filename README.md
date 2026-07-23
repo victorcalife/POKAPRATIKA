@@ -38,6 +38,8 @@ Grupo de futebol de Balneário Camboriú/SC, com identidade visual própria insp
 
 - `VITE_API_URL`
 
+O frontend é servido por Nginx e gera `/runtime-config.js` na inicialização do container usando `VITE_API_URL`; portanto a variável precisa existir no serviço Railway do frontend em runtime, e um redeploy é necessário após alterar o valor.
+
 ## Validações realizadas
 
 - Backend: build TypeScript executado com sucesso.
@@ -53,7 +55,8 @@ Grupo de futebol de Balneário Camboriú/SC, com identidade visual própria insp
 2. Configure o serviço Railway do backend apontando para `backend/`.
 3. Configure o serviço Railway do frontend apontando para `frontend/`.
 4. Defina todas as variáveis nos respectivos serviços.
-5. Acesse o frontend e use `Primeiro acesso` para criar o primeiro ADMIN.
+5. Após o deploy do frontend, abra `/runtime-config.js` na URL pública do frontend e confirme que `VITE_API_URL` aponta para o backend Railway.
+6. Acesse o frontend e use `Primeiro acesso` para criar o primeiro ADMIN.
 
 ## Homologação final
 

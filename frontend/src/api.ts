@@ -1,7 +1,15 @@
-const apiUrl = import.meta.env.VITE_API_URL as string | undefined;
+type RuntimeConfig = { VITE_API_URL?: string };
+
+declare global {
+  interface Window {
+    __POKA_PRATIKA_CONFIG__?: RuntimeConfig;
+  }
+}
+
+const apiUrl = window.__POKA_PRATIKA_CONFIG__?.VITE_API_URL || (import.meta.env.VITE_API_URL as string | undefined);
 
 if (!apiUrl) {
-  throw new Error('VITE_API_URL precisa estar definida no serviço de frontend da Railway.');
+  throw new Error('VITE_API_URL precisa estar definida no serviço de frontend da Railway em runtime ou no build do Vite.');
 }
 
 export const API_URL = apiUrl.replace(/\/$/, '');
