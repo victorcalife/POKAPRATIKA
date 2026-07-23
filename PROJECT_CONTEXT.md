@@ -10,17 +10,19 @@ Foi criada a base full-stack do sistema POKA PRÁTIKA, seguindo o padrão TOIT/R
 - Backend Node.js/TypeScript com Express e PostgreSQL via `pg`, sem ORM.
 - Frontend React/Vite/TypeScript/Tailwind, mobile-first e interface compacta.
 - Identidade visual original criada em `frontend/src/assets/poka-pratika-logo.svg`, com tom cômico de futebol amador/perna de pau e referência a Balneário Camboriú/SC.
-- Migrações SQL manuais em `migrations/01_core_schema.sql`, `migrations/02_pagamentos_vencimento_pontuacao.sql` e `migrations/03_saldo_inicial_temporada_excel.sql`.
+- Migrações SQL manuais em `migrations/01_core_schema.sql`, `migrations/02_pagamentos_vencimento_pontuacao.sql`, `migrations/03_saldo_inicial_temporada_excel.sql` e `migrations/04_posicoes_oficiais_atletas.sql`.
 - Sem criação de `.env` e sem hardcode de credenciais/URLs.
 - Backend valida obrigatoriamente `NODE_ENV=production` e `PORT=8080` no startup Railway.
 - CSS customizado foi mantido apenas como complemento ao Tailwind para ajustes finos de densidade visual e responsividade.
-- Migrações `01`, `02` e `03` foram informadas como executadas corretamente no PostgreSQL Railway.
+- Migrações `01`, `02` e `03` foram informadas como executadas corretamente no PostgreSQL Railway; a migração `04` deve ser executada para bancos já existentes que ainda tenham `LINHA`/`GOLEIRO` em `users.position`.
 
 ## Funcionalidades implementadas
 
 ### Banco
 
 - Usuários com perfis `ADMIN`, `COORDENADOR`, `ATLETA`.
+- Usuários/atletas com posição cadastral oficial em `users.position`: `GO`, `ZG`, `LD`, `LE`, `MD`, `MC`, `MA` ou `AT`.
+- A posição cadastral do atleta é independente do papel operacional da súmula; `match_players.role_in_match` permanece com `GOLEIRO`, `LINHA` e `PRESENTE_SEM_JOGAR`.
 - Temporadas com status `DRAFT`, `OPEN`, `CLOSED`.
 - Súmulas, jogadores da súmula, eventos, pagamentos, pontuação, premiações, votação, badges e suspensões.
 - Saldos iniciais importados da tabela atual do Excel em `season_standing_adjustments`, somados às novas súmulas confirmadas.
@@ -74,7 +76,7 @@ Foi criada a base full-stack do sistema POKA PRÁTIKA, seguindo o padrão TOIT/R
 - Votação de premiações sem `Vera Verão`, com apuração ADMIN e consolidação de winners/badges.
 - Configurações de usuários e pontuação para ADMIN/COORDENADOR, com criação de perfis privilegiados restrita ao ADMIN.
 - Painel administrativo expõe criação, início e encerramento de temporadas, eliminando dependência de chamada manual de endpoint.
-- ADMIN pode editar perfil, posição e status ativo/inativo de usuários; COORDENADOR mantém criação operacional de atletas sem elevação indevida de privilégio.
+- ADMIN pode editar perfil, posição oficial e status ativo/inativo de usuários; COORDENADOR mantém criação operacional de atletas sem elevação indevida de privilégio.
 - Suspensões abertas podem ser marcadas como cumpridas na temporada a partir de uma partida confirmada.
 - Painel administrativo permite colar a tabela atual do Excel com cabeçalho e importar o saldo inicial da temporada, retornando linhas importadas e linhas ignoradas para revisão.
 - O formulário antigo de criação de súmula foi removido; existe apenas o fluxo operacional com busca e drag-and-drop.
@@ -87,6 +89,7 @@ Foi criada a base full-stack do sistema POKA PRÁTIKA, seguindo o padrão TOIT/R
 - Backend deve subir somente com `NODE_ENV=production` e `PORT=8080`.
 - Não criar dados mockados.
 - Toda alteração de banco deve ser SQL manual em `/migrations`.
+- Para bancos já existentes com usuários cadastrados em `LINHA`/`GOLEIRO`, executar `migrations/04_posicoes_oficiais_atletas.sql`; a migração converte `GOLEIRO` para `GO`, `LINHA` para `MC` e preserva posições oficiais já válidas.
 - Para continuidade da temporada 2026, executar também `migrations/03_saldo_inicial_temporada_excel.sql` antes de importar a tabela do Excel.
 - `Vera Verão` foi removido.
 - Cartões oficiais: amarelo, vermelho e azul.

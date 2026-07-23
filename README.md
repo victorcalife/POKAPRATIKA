@@ -48,7 +48,7 @@ Grupo de futebol de Balneário Camboriú/SC, com identidade visual própria insp
 
 ## Primeira implantação
 
-1. Execute `migrations/01_core_schema.sql`, `migrations/02_pagamentos_vencimento_pontuacao.sql` e `migrations/03_saldo_inicial_temporada_excel.sql` no PostgreSQL Railway pelo TablePlus.
+1. Execute `migrations/01_core_schema.sql`, `migrations/02_pagamentos_vencimento_pontuacao.sql`, `migrations/03_saldo_inicial_temporada_excel.sql` e `migrations/04_posicoes_oficiais_atletas.sql` no PostgreSQL Railway pelo TablePlus.
 2. Configure o serviço Railway do backend apontando para `backend/`.
 3. Configure o serviço Railway do frontend apontando para `frontend/`.
 4. Defina todas as variáveis nos respectivos serviços.
@@ -72,7 +72,8 @@ Grupo de futebol de Balneário Camboriú/SC, com identidade visual própria insp
 - Perfis `ADMIN`, `COORDENADOR` e `ATLETA`.
 - Login por e-mail e senha, com ativação de cadastro por link enviado via Microsoft Graph.
 - Coordenador cadastra atletas, controla mensalidades e configura pontuações; criação de admin/coordenador fica restrita ao ADMIN.
-- Usuários/atletas com e-mail, senha criptografada, avatar e posição.
+- Usuários/atletas com e-mail, senha criptografada, avatar e posição oficial: `GO`, `ZG`, `LD`, `LE`, `MD`, `MC`, `MA` ou `AT`.
+- Posição cadastral do atleta é separada do papel operacional da súmula: na partida o jogador continua sendo escalado como `GOLEIRO`, `LINHA` ou `PRESENTE_SEM_JOGAR`.
 - Temporadas com abertura, encerramento e classificação.
 - Gestão de temporadas na interface: criar, iniciar e encerrar pelo painel `config.`.
 - Súmulas com placar, árbitro, times, jogadores, eventos, cronômetro e trocas.
