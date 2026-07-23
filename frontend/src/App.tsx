@@ -1,7 +1,8 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiClient } from './api';
-import logoUrl from './assets/poka-pratika-logo.svg';
 import { AthletePosition, MatchListItem, PointSetting, Season, Standing, User } from './types';
+
+const logoUrl = '/logo_pokapratika.png';
 
 type View = 'temporada' | 'pagamentos' | 'premios' | 'admin';
 type AuthPayload = { token: string; user: User };
