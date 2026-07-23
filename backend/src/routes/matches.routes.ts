@@ -35,6 +35,15 @@ const correctionSchema = scoreSchema.extend({ reason: z.string().min(5).max(500)
 const draftSchema = scoreSchema.extend({ clockSeconds: z.number().int().min(0).max(10800).default(0), clockRunning: z.boolean().default(false) });
 const idParamSchema = z.object({ id: z.string().uuid() });
 
+async function getMatchColumns(): Promise<Set<string>> {
+  const result = await query<{ column_name: string }>(
+    `SELECT column_name
+     FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'matches'`
+  );
+  return new Set(result.rows.map((row) => row.column_name));
+}
+
 async function validatePlayersInput(players: z.infer<typeof playerSchema>[]): Promise<void> {
   const userIds = players.map((player) => player.userId);
   if (new Set(userIds).size !== userIds.length) throw httpError(400, 'A súmula não pode repetir o mesmo atleta.');
@@ -261,13 +270,21 @@ matchesRouter.patch('/:id/lineup', requireRoles('ADMIN', 'COORDENADOR'), asyncHa
 
 matchesRouter.get('/:id', asyncHandler(async (req, res) => {
   const params = validate(idParamSchema, req.params);
+  const matchColumns = await getMatchColumns();
+  const draftSelect = [
+    matchColumns.has('draft_team_a_score') ? 'draft_team_a_score AS "draftTeamAScore"' : 'team_a_score AS "draftTeamAScore"',
+    matchColumns.has('draft_team_b_score') ? 'draft_team_b_score AS "draftTeamBScore"' : 'team_b_score AS "draftTeamBScore"',
+    matchColumns.has('draft_events') ? 'draft_events AS "draftEvents"' : '\'[]\'::JSONB AS "draftEvents"',
+    matchColumns.has('draft_clock_seconds') ? 'draft_clock_seconds AS "draftClockSeconds"' : '0::INTEGER AS "draftClockSeconds"',
+    matchColumns.has('draft_clock_running') ? 'draft_clock_running AS "draftClockRunning"' : 'FALSE AS "draftClockRunning"',
+    matchColumns.has('draft_saved_at') ? 'draft_saved_at AS "draftSavedAt"' : 'NULL::TIMESTAMPTZ AS "draftSavedAt"'
+  ];
   const match = await query(
     `SELECT id, season_id AS "seasonId", match_date AS "matchDate", title, referee_name AS "refereeName", status,
-      scheduled_start AS "scheduledStart", scheduled_end AS "scheduledEnd", started_at AS "startedAt", ended_at AS "endedAt",
+      TIME '20:00' AS "scheduledStart", TIME '21:00' AS "scheduledEnd", started_at AS "startedAt", ended_at AS "endedAt",
       team_a_name AS "teamAName", team_b_name AS "teamBName", team_a_score AS "teamAScore", team_b_score AS "teamBScore",
-      draft_team_a_score AS "draftTeamAScore", draft_team_b_score AS "draftTeamBScore", draft_events AS "draftEvents",
-      draft_clock_seconds AS "draftClockSeconds", draft_clock_running AS "draftClockRunning", draft_saved_at AS "draftSavedAt",
-      GREATEST(1, FLOOR(EXTRACT(EPOCH FROM ((((match_date + scheduled_end) AT TIME ZONE 'America/Sao_Paulo') - COALESCE(started_at, ((match_date + scheduled_start) AT TIME ZONE 'America/Sao_Paulo')))) / 60))::INTEGER AS "availableMinutes"
+      ${draftSelect.join(', ')},
+      GREATEST(1, FLOOR(EXTRACT(EPOCH FROM ((((match_date + TIME '21:00') AT TIME ZONE 'America/Sao_Paulo') - COALESCE(started_at, ((match_date + TIME '20:00') AT TIME ZONE 'America/Sao_Paulo')))) / 60))::INTEGER AS "availableMinutes"
      FROM matches WHERE id = $1`,
     [params.id]
   );
@@ -307,7 +324,7 @@ matchesRouter.get('/:id', asyncHandler(async (req, res) => {
 
 matchesRouter.post('/:id/start', requireRoles('ADMIN', 'COORDENADOR'), asyncHandler(async (req, res) => {
   await validateLineupReady(req.params.id);
-  const result = await query("UPDATE matches SET status = 'RUNNING', started_at = clock_timestamp(), updated_at = clock_timestamp() WHERE id = $1 AND status = 'DRAFT' AND clock_timestamp() < ((match_date + scheduled_end) AT TIME ZONE 'America/Sao_Paulo') RETURNING id, status, started_at AS \"startedAt\"", [req.params.id]);
+  const result = await query("UPDATE matches SET status = 'RUNNING', started_at = clock_timestamp(), updated_at = clock_timestamp() WHERE id = $1 AND status = 'DRAFT' AND clock_timestamp() < ((match_date + TIME '21:00') AT TIME ZONE 'America/Sao_Paulo') RETURNING id, status, started_at AS \"startedAt\"", [req.params.id]);
   if (!result.rowCount) throw httpError(409, 'Somente súmulas em rascunho e dentro do horário da quadra podem ser iniciadas.');
   res.json(result.rows[0]);
 }));

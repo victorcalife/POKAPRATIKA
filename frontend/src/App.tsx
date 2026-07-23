@@ -447,6 +447,7 @@ function MatchesPanel({ api, canCoordinate, users, matches, activeSeasonId, onRe
   const [clockRunning, setClockRunning] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [cancelConfirm, setCancelConfirm] = useState(false);
+  const [matchMessage, setMatchMessage] = useState('');
 
   useEffect(() => {
     if (!clockRunning || selectedMatch?.status === 'RUNNING') return;
@@ -471,10 +472,15 @@ function MatchesPanel({ api, canCoordinate, users, matches, activeSeasonId, onRe
   }, [selectedMatch?.id, selectedMatch?.status, selectedMatch?.startedAt, selectedMatch?.availableMinutes, selectedMatch?.draftClockSeconds, selectedMatch?.draftClockRunning]);
 
   async function openMatch(id: string) {
-    setSelectedMatch(await api.request<MatchDetail>(`/matches/${id}`));
-    setSeconds(0);
-    setClockRunning(false);
-    setCancelConfirm(false);
+    try {
+      setMatchMessage('');
+      setSelectedMatch(await api.request<MatchDetail>(`/matches/${id}`));
+      setSeconds(0);
+      setClockRunning(false);
+      setCancelConfirm(false);
+    } catch (error) {
+      setMatchMessage(error instanceof Error ? error.message : 'Não foi possível abrir a súmula.');
+    }
   }
 
   async function startSelectedMatch() {
@@ -496,6 +502,7 @@ function MatchesPanel({ api, canCoordinate, users, matches, activeSeasonId, onRe
     <div className="grid two">
       <section className="card compact">
         <div className="card-head"><h2>Súmulas</h2>{canCoordinate && <OperationalMatchDialog api={api} users={users} activeSeasonId={activeSeasonId} onDone={onReload} />}</div>
+        {matchMessage && <button className="alert" onClick={() => setMatchMessage('')}>{matchMessage}</button>}
         <div className="table-cards">
           {matches.map((match) => <button className="row-card as-button" key={match.id} onClick={() => openMatch(match.id)}><strong>{match.title}</strong><span>{match.teamAScore} x {match.teamBScore}</span><small>{match.teamAName} × {match.teamBName} • {match.status}</small></button>)}
         </div>

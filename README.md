@@ -51,7 +51,7 @@ O frontend é servido por Nginx e gera `/runtime-config.js` na inicialização d
 
 ## Primeira implantação
 
-1. Execute `migrations/01_core_schema.sql`, `migrations/02_pagamentos_vencimento_pontuacao.sql`, `migrations/03_saldo_inicial_temporada_excel.sql`, `migrations/04_posicoes_oficiais_atletas.sql`, `migrations/05_sumula_rascunho_operacional_autosave.sql`, `migrations/06_selecao_do_ano_7_votos.sql`, `migrations/07_eventos_gol_contra.sql` e `migrations/08_email_case_insensitive_unico.sql` no PostgreSQL Railway pelo TablePlus.
+1. Execute `migrations/01_core_schema.sql`, `migrations/02_pagamentos_vencimento_pontuacao.sql`, `migrations/03_saldo_inicial_temporada_excel.sql`, `migrations/04_posicoes_oficiais_atletas.sql`, `migrations/05_sumula_rascunho_operacional_autosave.sql`, `migrations/06_selecao_do_ano_7_votos.sql`, `migrations/07_eventos_gol_contra.sql`, `migrations/08_email_case_insensitive_unico.sql` e `migrations/09_reparo_schema_sumula_operacional.sql` no PostgreSQL Railway pelo TablePlus.
 2. Configure o serviço Railway do backend apontando para `backend/`.
 3. Configure o serviço Railway do frontend apontando para `frontend/`.
 4. Defina todas as variáveis nos respectivos serviços.
@@ -96,6 +96,7 @@ O frontend é servido por Nginx e gera `/runtime-config.js` na inicialização d
 - Criação de súmula com busca de atleta por nome/e-mail, inclusão rápida em cada time e sequência de substituição arrastável.
 - Criação de súmula com lista de presença e balanceamento automático por posições, distribuindo goleiros, defensores/laterais, meias e atacantes entre os times da forma mais equilibrada possível.
 - A tela `Nova súmula` cria imediatamente um rascunho no PostgreSQL e autosalva montagem de presentes, times, banco e sequência antes mesmo do coordenador fechar a modal.
+- Bancos Railway já existentes devem executar `09_reparo_schema_sumula_operacional.sql` para garantir abertura de súmulas vazias e autosave operacional com as colunas de rascunho/horário.
 - Súmulas existentes em `DRAFT`, `RUNNING` ou `SUBMITTED` podem ter árbitro, data, times e escalação reabertos, editados e salvos, recalculando o roteiro de trocas.
 - O backend permite editar a escalação enquanto a súmula não está confirmada/cancelada e bloqueia `Jogo iniciado` se os times não tiverem exatamente 1 goleiro e pelo menos 6 jogadores de linha cada.
 - O backend bloqueia submissão/confirmação de súmula sem início oficial registrado por `Jogo iniciado`, impedindo pontuação de rascunho que não entrou em operação.

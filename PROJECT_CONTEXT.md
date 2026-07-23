@@ -11,7 +11,7 @@ Foi criada a base full-stack do sistema POKA PRÁTIKA, seguindo o padrão TOIT/R
 - Frontend React/Vite/TypeScript/Tailwind, mobile-first e interface compacta.
 - Frontend em produção usa Nginx com `docker-entrypoint.sh` para gerar `/runtime-config.js` a partir de `VITE_API_URL` no runtime Railway, evitando tela branca quando a variável existe no serviço mas não entrou no build Vite.
 - Identidade visual original criada em `frontend/src/assets/poka-pratika-logo.svg`, com tom cômico de futebol amador/perna de pau, referência a Balneário Camboriú/SC e paleta azul média aplicada ao escudo e aos elementos de destaque do sistema.
-- Migrações SQL manuais em `migrations/01_core_schema.sql`, `migrations/02_pagamentos_vencimento_pontuacao.sql`, `migrations/03_saldo_inicial_temporada_excel.sql`, `migrations/04_posicoes_oficiais_atletas.sql`, `migrations/05_sumula_rascunho_operacional_autosave.sql`, `migrations/06_selecao_do_ano_7_votos.sql`, `migrations/07_eventos_gol_contra.sql` e `migrations/08_email_case_insensitive_unico.sql`.
+- Migrações SQL manuais em `migrations/01_core_schema.sql`, `migrations/02_pagamentos_vencimento_pontuacao.sql`, `migrations/03_saldo_inicial_temporada_excel.sql`, `migrations/04_posicoes_oficiais_atletas.sql`, `migrations/05_sumula_rascunho_operacional_autosave.sql`, `migrations/06_selecao_do_ano_7_votos.sql`, `migrations/07_eventos_gol_contra.sql`, `migrations/08_email_case_insensitive_unico.sql` e `migrations/09_reparo_schema_sumula_operacional.sql`.
 - Sem criação de `.env` e sem hardcode de credenciais/URLs.
 - Backend valida obrigatoriamente `NODE_ENV=production`, `PORT=8080`, `DATABASE_URL`, `JWT_SECRET`, `ALLOWED_ORIGINS` e `FRONTEND_URL` no startup Railway.
 - Backend expõe `/health` e `/ready`; `/ready` consulta o PostgreSQL com SQL nativo para homologar conexão real do serviço.
@@ -48,6 +48,7 @@ Foi criada a base full-stack do sistema POKA PRÁTIKA, seguindo o padrão TOIT/R
 - Encerramento de temporada gera prêmios/badges automáticos de ranking para alimentar a carreira histórica dos atletas.
 - Endpoint de carreira do atleta consolida estatísticas, temporadas, títulos, badges e suspensões.
 - Súmulas: criar, iniciar, submeter, confirmar, registrar eventos e cálculo de trocas.
+- Detalhe de súmula `DRAFT` vazia foi endurecido para abrir sem atletas/eventos e sem depender de `scheduled_start/scheduled_end`; bancos existentes devem executar a migration `09` para garantir colunas de autosave usadas nos fluxos seguintes.
 - Súmulas existentes em `DRAFT`, `RUNNING` ou `SUBMITTED` podem ter árbitro, data, times e escalação reabertos e editados pela interface, persistindo em `/matches/:id/lineup` e recalculando roteiro de trocas após salvar.
 - Início oficial da partida pelo botão `Jogo iniciado`, persistindo `started_at` com o instante real do clique no PostgreSQL e exibindo em horário de Brasília.
 - Tempo de jogo e cadência de substituições respeitam a janela fixa da quadra: aluguel das 20:00 às 21:00, mas se o jogo iniciar atrasado o tempo útil passa a ser apenas o intervalo entre `started_at` e 21:00.
@@ -143,7 +144,7 @@ Foi criada a base full-stack do sistema POKA PRÁTIKA, seguindo o padrão TOIT/R
 ## Próximo passo técnico recomendado
 
 1. Em banco novo, executar `migrations/01_core_schema.sql` e depois as migrações incrementais aplicáveis em ordem crescente.
-2. Em banco já existente, executar até `migrations/08_email_case_insensitive_unico.sql`, garantindo também `04`, `05`, `06` e `07` se ainda não tiverem sido aplicadas.
+2. Em banco já existente, executar até `migrations/09_reparo_schema_sumula_operacional.sql`, garantindo também `04`, `05`, `06`, `07` e `08` se ainda não tiverem sido aplicadas.
 3. Subir backend e frontend na Railway com root directories corretos.
 4. Conferir variáveis Railway: backend com `DATABASE_URL`, `NODE_ENV=production`, `PORT=8080`, `JWT_SECRET`, `ALLOWED_ORIGINS`, `FRONTEND_URL` e credenciais Microsoft Graph; frontend com `VITE_API_URL`.
 5. Usar a tela de primeiro acesso para criar o primeiro ADMIN.
