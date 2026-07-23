@@ -44,6 +44,18 @@ async function getMatchColumns(): Promise<Set<string>> {
   return new Set(result.rows.map((row) => row.column_name));
 }
 
+async function tableExists(tableName: string): Promise<boolean> {
+  const result = await query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM information_schema.tables
+       WHERE table_schema = 'public' AND table_name = $1
+     ) AS exists`,
+    [tableName]
+  );
+  return result.rows[0]?.exists === true;
+}
+
 async function validatePlayersInput(players: z.infer<typeof playerSchema>[]): Promise<void> {
   const userIds = players.map((player) => player.userId);
   if (new Set(userIds).size !== userIds.length) throw httpError(400, 'A súmula não pode repetir o mesmo atleta.');
@@ -297,16 +309,18 @@ matchesRouter.get('/:id', asyncHandler(async (req, res) => {
     [params.id]
   );
   const events = await query('SELECT id, user_id AS "userId", related_user_id AS "relatedUserId", event_type AS "eventType", minute, team FROM match_events WHERE match_id = $1 ORDER BY minute ASC, created_at ASC', [params.id]);
-  const corrections = await query(
-    `SELECT mc.id, mc.reason, mc.previous_team_a_score AS "previousTeamAScore", mc.previous_team_b_score AS "previousTeamBScore",
-      mc.new_team_a_score AS "newTeamAScore", mc.new_team_b_score AS "newTeamBScore", mc.previous_events AS "previousEvents",
-      mc.new_events AS "newEvents", mc.created_at AS "createdAt", u.name AS "correctedByName"
-     FROM match_corrections mc
-     JOIN users u ON u.id = mc.corrected_by
-     WHERE mc.match_id = $1
-     ORDER BY mc.created_at DESC`,
-    [params.id]
-  );
+  const corrections = await tableExists('match_corrections')
+    ? await query(
+      `SELECT mc.id, mc.reason, mc.previous_team_a_score AS "previousTeamAScore", mc.previous_team_b_score AS "previousTeamBScore",
+        mc.new_team_a_score AS "newTeamAScore", mc.new_team_b_score AS "newTeamBScore", mc.previous_events AS "previousEvents",
+        mc.new_events AS "newEvents", mc.created_at AS "createdAt", u.name AS "correctedByName"
+       FROM match_corrections mc
+       JOIN users u ON u.id = mc.corrected_by
+       WHERE mc.match_id = $1
+       ORDER BY mc.created_at DESC`,
+      [params.id]
+    )
+    : { rows: [] };
   const lineA = players.rows.filter((player: any) => player.team === 'A' && player.roleInMatch === 'LINHA' && player.rotationOrder);
   const lineB = players.rows.filter((player: any) => player.team === 'B' && player.roleInMatch === 'LINHA' && player.rotationOrder);
 
@@ -399,6 +413,7 @@ matchesRouter.post('/:id/correct', requireRoles('ADMIN', 'COORDENADOR'), asyncHa
   const parsedBody = validate(correctionSchema, req.body);
   const body = { ...parsedBody, events: parsedBody.events ?? [] };
   await validateScoreSheet(req.params.id, body, true);
+  if (!await tableExists('match_corrections')) throw httpError(409, 'Correção auditada indisponível: execute migrations/10_correcoes_auditadas_sumula.sql no PostgreSQL da Railway.');
 
   const match = await query<{ team_a_score: number; team_b_score: number; status: string }>('SELECT team_a_score, team_b_score, status FROM matches WHERE id = $1', [req.params.id]);
   if (match.rows[0].status !== 'CONFIRMED') throw httpError(409, 'Correção auditada é exclusiva para súmulas já confirmadas.');
