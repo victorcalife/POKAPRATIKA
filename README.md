@@ -51,12 +51,12 @@ O frontend é servido por Nginx e gera `/runtime-config.js` na inicialização d
 
 ## Primeira implantação
 
-1. Execute `migrations/01_core_schema.sql`, `migrations/02_pagamentos_vencimento_pontuacao.sql`, `migrations/03_saldo_inicial_temporada_excel.sql`, `migrations/04_posicoes_oficiais_atletas.sql`, `migrations/05_sumula_rascunho_operacional_autosave.sql`, `migrations/06_selecao_do_ano_7_votos.sql`, `migrations/07_eventos_gol_contra.sql`, `migrations/08_email_case_insensitive_unico.sql` e `migrations/09_reparo_schema_sumula_operacional.sql` no PostgreSQL Railway pelo TablePlus.
+1. Execute `migrations/01_core_schema.sql`, `migrations/02_pagamentos_vencimento_pontuacao.sql`, `migrations/03_saldo_inicial_temporada_excel.sql`, `migrations/04_posicoes_oficiais_atletas.sql`, `migrations/05_sumula_rascunho_operacional_autosave.sql`, `migrations/06_selecao_do_ano_7_votos.sql`, `migrations/07_eventos_gol_contra.sql`, `migrations/08_email_case_insensitive_unico.sql`, `migrations/09_reparo_schema_sumula_operacional.sql`, `migrations/10_correcoes_auditadas_sumula.sql`, `migrations/11_confirmacao_presenca_jantar.sql`, `migrations/12_agendamento_confirmacao_jogos.sql` e `migrations/13_central_regras_premiacoes_dinamicas.sql` no PostgreSQL Railway pelo TablePlus.
 2. Configure o serviço Railway do backend apontando para `backend/`.
 3. Configure o serviço Railway do frontend apontando para `frontend/`.
 4. Defina todas as variáveis nos respectivos serviços.
 5. Após o deploy do frontend, abra `/runtime-config.js` na URL pública do frontend e confirme que `VITE_API_URL` aponta para o backend Railway.
-6. Acesse o frontend e use `Primeiro acesso` para criar o primeiro ADMIN.
+6. Garanta pelo menos um ADMIN ativo no banco antes de liberar o acesso; o login público não exibe fluxo visual de primeiro acesso.
 
 ## Homologação final
 
@@ -70,13 +70,15 @@ O frontend é servido por Nginx e gera `/runtime-config.js` na inicialização d
 1. Criar o primeiro ADMIN no frontend.
 2. Cadastrar atletas com nome, e-mail, perfil e posição; se a senha ficar vazia, o atleta recebe o link `POKA PRÁTIKA: ATIVE SEU CADASTRO`.
 3. Criar e abrir a temporada 2026.
-4. Colar a tabela atual do Excel em `config. > Importar tabela atual do Excel`, usando `email` sempre que possível.
+4. Com usuário ADMIN, colar a tabela atual do Excel em `config. > Importar tabela atual do Excel`, usando `email` sempre que possível; COORDENADOR e ATLETA não veem essa opção.
 5. Revisar linhas ignoradas na importação e corrigir nomes/e-mails antes de importar novamente.
-6. Conferir classificação geral, artilharia, assistência, assiduidade e cartões.
-7. A partir da primeira rodada no sistema, criar súmula pela busca de atletas, ordenar substituições por arrastar e soltar, submeter, revisar e confirmar.
-8. Se uma súmula não confirmada foi aberta por engano, cancelar pela própria aba de súmulas para não impactar a temporada.
-9. Se houver erro de gol, assistência, cartão ou placar depois de confirmar, usar correção auditada informando o motivo; o histórico fica visível no detalhe da súmula.
-10. Marcar suspensões cumpridas na aba de temporada selecionando a partida confirmada em que o atleta ficou suspenso.
+6. Conferir classificação geral, artilharia, assistência, assiduidade, cartões e a `Central de regras e prêmios`, onde ADMIN/COORDENADOR configuram pontuação, rankings, votação e badges.
+7. Pré-definir os jogos pela `Agenda`: recorrente semanal, como toda quarta às 20:00, com antecedência de confirmação configurável pelo ADMIN/COORDENADOR, ou data específica em calendário para exceções.
+8. No dia do jogo, se necessário, ADMIN/COORDENADOR podem disparar manualmente `Abrir confirmação`; atletas recebem o aviso ao acessar e confirmam se vão jogar, se estarão apenas presentes, se ficam para janta/churrasco e quantos convidados levarão.
+9. Depois usar essas confirmações como base da súmula, sortear/rebalancear times, submeter, revisar e confirmar.
+10. Se uma súmula não confirmada foi aberta por engano, cancelar pela própria aba de súmulas para não impactar a temporada.
+11. Se houver erro de gol, assistência, cartão ou placar depois de confirmar, usar correção auditada informando o motivo; o histórico fica visível no detalhe da súmula.
+12. Marcar suspensões cumpridas na aba de temporada selecionando a partida confirmada em que o atleta ficou suspenso.
 
 ## Escopo inicial implementado
 
@@ -95,6 +97,9 @@ O frontend é servido por Nginx e gera `/runtime-config.js` na inicialização d
 - Correção auditada de súmula confirmada para erros de gol, assistência, cartão ou placar, com motivo obrigatório.
 - Criação de súmula com busca de atleta por nome/e-mail, inclusão rápida em cada time e sequência de substituição arrastável.
 - Criação de súmula com lista de presença e balanceamento automático por posições, distribuindo goleiros, defensores/laterais, meias e atacantes entre os times da forma mais equilibrada possível.
+- Confirmação individual da rodada por atleta: vai jogar, apenas presença, ausência, janta/churrasco e quantidade de convidados; a súmula usa quem confirmou `Vou jogar` como base de atletas disponíveis e mantém `Só presença` como presente sem jogar.
+- Agenda de jogos para ADMIN/COORDENADOR: criação avulsa por calendário, geração recorrente semanal, edição/remoção de jogos pré-definidos, abertura automática da confirmação por antecedência e gatilho manual `Abrir confirmação`.
+- Atletas recebem popup de fácil acesso quando existe jogo em rascunho `Aberto para Confirmação` e ainda sem resposta própria.
 - A tela `Nova súmula` cria imediatamente um rascunho no PostgreSQL e autosalva montagem de presentes, times, banco e sequência antes mesmo do coordenador fechar a modal.
 - Bancos Railway já existentes devem executar `09_reparo_schema_sumula_operacional.sql` para garantir abertura de súmulas vazias e autosave operacional com as colunas de rascunho/horário.
 - Súmulas existentes em `DRAFT`, `RUNNING` ou `SUBMITTED` podem ter árbitro, data, times e escalação reabertos, editados e salvos, recalculando o roteiro de trocas.
@@ -113,7 +118,10 @@ O frontend é servido por Nginx e gera `/runtime-config.js` na inicialização d
 - Exportação CSV da classificação geral e das mensalidades para conferência externa sem depender de manipulação manual no sistema.
 - Classificação compatível com a planilha real: pontos, jogos, vitórias, empates, derrotas, presença sem jogar, mensalidade, gols da equipe, aproveitamento e médias.
 - Rankings de artilharia, assistência, assiduidade e cartões, incluindo gol contra e pontos ponderados de cartões.
-- Pontuação configurável pelo ADMIN.
+- Pontuação configurável pelo ADMIN/COORDENADOR, incluindo presença, pagamento, resultado, gols, assistência, gol contra e cartões.
+- Central dinâmica de regras e premiações para ADMIN/COORDENADOR: rankings automáticos por métricas pré-definidas, quantidade de vencedores, mínimo de jogos, badges com ícone/cor, categorias votáveis e número de votos por categoria.
+- Aba de prêmios exibe acompanhamentos configurados com dados reais das súmulas e consolida rankings dinâmicos no encerramento da temporada.
+- Modal da súmula inclui checklist do dia do jogo com status de confirmação, atletas confirmados, escalação, goleiros, linhas e início oficial.
 - ADMIN edita perfil, posição e status ativo/inativo de usuários pela interface.
 - Mensalidades com data de vencimento e ponto por pagamento antecipado dentro da temporada.
 - Rankings de pontos, gols, assistências e presença.

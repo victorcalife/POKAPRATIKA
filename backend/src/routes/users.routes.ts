@@ -127,7 +127,7 @@ usersRouter.get('/:id/career', asyncHandler(async (req, res) => {
   );
 
   const badges = await query(
-    `SELECT id, season_id AS "seasonId", code, label, created_at AS "createdAt"
+    `SELECT id, season_id AS "seasonId", code, label, icon, color, created_at AS "createdAt"
      FROM athlete_badges
      WHERE user_id = $1
      ORDER BY created_at DESC`,

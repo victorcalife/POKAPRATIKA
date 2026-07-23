@@ -54,6 +54,17 @@ export type MatchListItem = {
   title: string;
   refereeName?: string | null;
   status: string;
+  scheduledStart?: string | null;
+  scheduledEnd?: string | null;
+  confirmationOpenAt?: string | null;
+  confirmationOpensHoursBefore?: number;
+  confirmationOpenedAt?: string | null;
+  confirmationOpen?: boolean;
+  scheduleSource?: 'MANUAL' | 'RECURRING';
+  attendancePlaying?: number;
+  attendancePresentOnly?: number;
+  attendanceAbsent?: number;
+  myAttendanceStatus?: 'JOGAR' | 'PRESENTE_SEM_JOGAR' | 'AUSENTE' | null;
   teamAName: string;
   teamBName: string;
   teamAScore: number;

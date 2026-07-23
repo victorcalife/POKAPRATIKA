@@ -18,22 +18,63 @@ const playerSchema = z.object({
   present: z.boolean().default(true)
 });
 
-const createMatchSchema = z.object({
+const timeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Informe horário no formato HH:mm.');
+
+const createMatchBaseSchema = z.object({
   seasonId: z.string().uuid().nullable().optional(),
   matchDate: z.string().date(),
   title: z.string().min(2),
   refereeName: z.string().max(120).nullable().optional(),
   teamAName: z.string().min(1).default('Time A'),
   teamBName: z.string().min(1).default('Time B'),
+  scheduledStart: timeSchema.default('20:00'),
+  scheduledEnd: timeSchema.default('21:00'),
+  confirmationOpensHoursBefore: z.number().int().min(1).max(336).default(48),
+  confirmationOpenAt: z.string().datetime().nullable().optional(),
   players: z.array(playerSchema).default([])
 });
-const lineupSchema = createMatchSchema.omit({ seasonId: true }).partial({ matchDate: true, title: true, teamAName: true, teamBName: true }).extend({ players: z.array(playerSchema).default([]) });
+const createMatchSchema = createMatchBaseSchema.refine((body) => body.scheduledEnd > body.scheduledStart, { message: 'O horário final precisa ser maior que o início.' });
+const lineupSchema = createMatchBaseSchema.omit({ seasonId: true }).partial({ matchDate: true, title: true, teamAName: true, teamBName: true, scheduledStart: true, scheduledEnd: true }).extend({ players: z.array(playerSchema).default([]) }).refine((body) => !body.scheduledStart || !body.scheduledEnd || body.scheduledEnd > body.scheduledStart, { message: 'O horário final precisa ser maior que o início.' });
 
 const eventSchema = z.object({ userId: z.string().uuid(), relatedUserId: z.string().uuid().nullable().optional(), eventType: z.enum(['GOL', 'GOL_CONTRA', 'ASSISTENCIA', 'CARTAO_AMARELO', 'CARTAO_VERMELHO', 'CARTAO_AZUL']), minute: z.number().int().min(0).max(180), team: z.enum(['A', 'B']), occurredAt: z.string().datetime().nullable().optional() });
 const scoreSchema = z.object({ teamAScore: z.number().int().min(0), teamBScore: z.number().int().min(0), events: z.array(eventSchema).default([]) });
 const correctionSchema = scoreSchema.extend({ reason: z.string().min(5).max(500) });
 const draftSchema = scoreSchema.extend({ clockSeconds: z.number().int().min(0).max(10800).default(0), clockRunning: z.boolean().default(false) });
+const attendanceSchema = z.object({ responseStatus: z.enum(['JOGAR', 'PRESENTE_SEM_JOGAR', 'AUSENTE']), dinnerConfirmed: z.boolean().default(false), guestCount: z.number().int().min(0).max(20).default(0), notes: z.string().max(300).nullable().optional() });
 const idParamSchema = z.object({ id: z.string().uuid() });
+const manualScheduleBaseSchema = z.object({
+  seasonId: z.string().uuid().nullable().optional(),
+  matchDate: z.string().date(),
+  title: z.string().min(2).default('Futebol de quarta'),
+  refereeName: z.string().max(120).nullable().optional(),
+  teamAName: z.string().min(1).default('Time A'),
+  teamBName: z.string().min(1).default('Time B'),
+  scheduledStart: timeSchema.default('20:00'),
+  scheduledEnd: timeSchema.default('21:00'),
+  confirmationOpensHoursBefore: z.number().int().min(1).max(336).default(48)
+});
+const manualScheduleSchema = manualScheduleBaseSchema.refine((body) => body.scheduledEnd > body.scheduledStart, { message: 'O horário final precisa ser maior que o início.' });
+const recurringScheduleSchema = manualScheduleBaseSchema.omit({ matchDate: true }).extend({
+  weekday: z.number().int().min(0).max(6).default(3),
+  startDate: z.string().date(),
+  endDate: z.string().date()
+}).refine((body) => body.scheduledEnd > body.scheduledStart, { message: 'O horário final precisa ser maior que o início.' }).refine((body) => body.endDate >= body.startDate, { message: 'A data final precisa ser maior ou igual à inicial.' });
+const schedulePatchSchema = manualScheduleBaseSchema.omit({ seasonId: true }).partial().refine((body) => !body.scheduledStart || !body.scheduledEnd || body.scheduledEnd > body.scheduledStart, { message: 'O horário final precisa ser maior que o início.' });
+
+function buildConfirmationOpenAt(matchDate: string, scheduledStart: string, hoursBefore: number): string {
+  const startsAt = new Date(`${matchDate}T${scheduledStart}:00-03:00`).getTime();
+  return new Date(startsAt - hoursBefore * 60 * 60 * 1000).toISOString();
+}
+
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date.getTime());
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+function formatDate(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
 
 async function getMatchColumns(): Promise<Set<string>> {
   const result = await query<{ column_name: string }>(
@@ -54,6 +95,13 @@ async function tableExists(tableName: string): Promise<boolean> {
     [tableName]
   );
   return result.rows[0]?.exists === true;
+}
+
+async function ensureScheduleAvailable(): Promise<void> {
+  const matchColumns = await getMatchColumns();
+  if (!matchColumns.has('confirmation_open_at') || !matchColumns.has('confirmation_opens_hours_before') || !matchColumns.has('confirmation_opened_at') || !await tableExists('match_schedule_rules')) {
+    throw httpError(409, 'Agenda de confirmações indisponível: execute migrations/12_agendamento_confirmacao_jogos.sql no PostgreSQL da Railway.');
+  }
 }
 
 async function validatePlayersInput(players: z.infer<typeof playerSchema>[]): Promise<void> {
@@ -198,15 +246,42 @@ async function createAutomaticSuspensions(matchId: string): Promise<void> {
 
 matchesRouter.use(requireAuth);
 
-matchesRouter.get('/', asyncHandler(async (req, res) => {
+matchesRouter.get('/', asyncHandler(async (req: AuthRequest, res) => {
+  const matchColumns = await getMatchColumns();
+  const hasAttendance = await tableExists('match_attendance_responses');
+  const scheduleSelect = [
+    matchColumns.has('scheduled_start') ? 'm.scheduled_start AS "scheduledStart"' : 'TIME \'20:00\' AS "scheduledStart"',
+    matchColumns.has('scheduled_end') ? 'm.scheduled_end AS "scheduledEnd"' : 'TIME \'21:00\' AS "scheduledEnd"',
+    matchColumns.has('confirmation_open_at') ? 'm.confirmation_open_at AS "confirmationOpenAt"' : 'NULL::TIMESTAMPTZ AS "confirmationOpenAt"',
+    matchColumns.has('confirmation_opens_hours_before') ? 'm.confirmation_opens_hours_before AS "confirmationOpensHoursBefore"' : '48::INTEGER AS "confirmationOpensHoursBefore"',
+    matchColumns.has('confirmation_opened_at') ? 'm.confirmation_opened_at AS "confirmationOpenedAt"' : 'NULL::TIMESTAMPTZ AS "confirmationOpenedAt"',
+    matchColumns.has('schedule_source') ? 'm.schedule_source AS "scheduleSource"' : '\'MANUAL\' AS "scheduleSource"',
+    matchColumns.has('confirmation_open_at') ? '(m.confirmation_opened_at IS NOT NULL OR m.confirmation_open_at <= now()) AS "confirmationOpen"' : '(m.status = \'DRAFT\') AS "confirmationOpen"'
+  ];
+  const attendanceJoin = hasAttendance
+    ? `LEFT JOIN LATERAL (
+         SELECT
+          count(*) FILTER (WHERE response_status = 'JOGAR')::INTEGER AS playing,
+          count(*) FILTER (WHERE response_status = 'PRESENTE_SEM_JOGAR')::INTEGER AS present_only,
+          count(*) FILTER (WHERE response_status = 'AUSENTE')::INTEGER AS absent,
+          max(response_status) FILTER (WHERE user_id = $2::UUID) AS my_status
+         FROM match_attendance_responses
+         WHERE match_id = m.id
+       ) att ON TRUE`
+    : '';
+  const attendanceSelect = hasAttendance
+    ? 'COALESCE(att.playing, 0) AS "attendancePlaying", COALESCE(att.present_only, 0) AS "attendancePresentOnly", COALESCE(att.absent, 0) AS "attendanceAbsent", att.my_status AS "myAttendanceStatus"'
+    : '0::INTEGER AS "attendancePlaying", 0::INTEGER AS "attendancePresentOnly", 0::INTEGER AS "attendanceAbsent", NULL::TEXT AS "myAttendanceStatus"';
   const result = await query(
-    `SELECT id, season_id AS "seasonId", match_date AS "matchDate", title, referee_name AS "refereeName", status,
-      team_a_name AS "teamAName", team_b_name AS "teamBName", team_a_score AS "teamAScore", team_b_score AS "teamBScore", created_at AS "createdAt"
-     FROM matches
-     WHERE ($1::UUID IS NULL OR season_id = $1)
-     ORDER BY match_date DESC, created_at DESC
+    `SELECT m.id, m.season_id AS "seasonId", m.match_date AS "matchDate", m.title, m.referee_name AS "refereeName", m.status,
+      m.team_a_name AS "teamAName", m.team_b_name AS "teamBName", m.team_a_score AS "teamAScore", m.team_b_score AS "teamBScore", m.created_at AS "createdAt",
+      ${scheduleSelect.join(', ')}, ${attendanceSelect}
+     FROM matches m
+     ${attendanceJoin}
+    WHERE ($1::UUID IS NULL OR m.season_id = $1)
+    ORDER BY m.match_date DESC, m.created_at DESC
      LIMIT 80`,
-    [req.query.seasonId || null]
+    hasAttendance ? [req.query.seasonId || null, req.user?.id] : [req.query.seasonId || null]
   );
   res.json(result.rows);
 }));
@@ -217,12 +292,23 @@ matchesRouter.post('/', requireRoles('ADMIN', 'COORDENADOR'), asyncHandler(async
   await validatePlayersInput(players);
   const seasonResult = body.seasonId ? await query('SELECT id FROM seasons WHERE id = $1 AND status = \'OPEN\'', [body.seasonId]) : { rowCount: 0 };
   const seasonId = seasonResult.rowCount ? body.seasonId : null;
+  const matchColumns = await getMatchColumns();
+  const scheduledStart = body.scheduledStart ?? '20:00';
+  const scheduledEnd = body.scheduledEnd ?? '21:00';
+  const confirmationOpensHoursBefore = body.confirmationOpensHoursBefore ?? 48;
+  const confirmationOpenAt = body.confirmationOpenAt ?? buildConfirmationOpenAt(body.matchDate, scheduledStart, confirmationOpensHoursBefore);
 
   const match = await query<{ id: string }>(
-    `INSERT INTO matches (season_id, match_date, title, referee_name, team_a_name, team_b_name, created_by)
+    matchColumns.has('confirmation_open_at') && matchColumns.has('confirmation_opens_hours_before')
+      ? `INSERT INTO matches (season_id, match_date, title, referee_name, team_a_name, team_b_name, scheduled_start, scheduled_end, confirmation_open_at, confirmation_opens_hours_before, schedule_source, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::TIME, $8::TIME, $9::TIMESTAMPTZ, $10, 'MANUAL', $11)
+     RETURNING id`
+      : `INSERT INTO matches (season_id, match_date, title, referee_name, team_a_name, team_b_name, created_by)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING id`,
-    [seasonId, body.matchDate, body.title, body.refereeName ?? null, body.teamAName, body.teamBName, req.user?.id]
+    matchColumns.has('confirmation_open_at') && matchColumns.has('confirmation_opens_hours_before')
+          ? [seasonId, body.matchDate, body.title, body.refereeName ?? null, body.teamAName, body.teamBName, scheduledStart, scheduledEnd, confirmationOpenAt, confirmationOpensHoursBefore, req.user?.id]
+      : [seasonId, body.matchDate, body.title, body.refereeName ?? null, body.teamAName, body.teamBName, req.user?.id]
   );
 
   for (const player of players) {
@@ -280,6 +366,139 @@ matchesRouter.patch('/:id/lineup', requireRoles('ADMIN', 'COORDENADOR'), asyncHa
   res.json({ ok: true });
 }));
 
+matchesRouter.post('/schedule/manual', requireRoles('ADMIN', 'COORDENADOR'), asyncHandler(async (req: AuthRequest, res) => {
+  await ensureScheduleAvailable();
+  const body = validate(manualScheduleSchema, req.body);
+  const seasonResult = body.seasonId ? await query('SELECT id FROM seasons WHERE id = $1 AND status = \'OPEN\'', [body.seasonId]) : { rowCount: 0 };
+  const seasonId = seasonResult.rowCount ? body.seasonId : null;
+  const scheduledStart = body.scheduledStart ?? '20:00';
+  const scheduledEnd = body.scheduledEnd ?? '21:00';
+  const confirmationOpensHoursBefore = body.confirmationOpensHoursBefore ?? 48;
+  const confirmationOpenAt = buildConfirmationOpenAt(body.matchDate, scheduledStart, confirmationOpensHoursBefore);
+  const result = await query<{ id: string }>(
+    `INSERT INTO matches (season_id, match_date, title, referee_name, team_a_name, team_b_name, scheduled_start, scheduled_end, confirmation_open_at, confirmation_opens_hours_before, schedule_source, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::TIME, $8::TIME, $9::TIMESTAMPTZ, $10, 'MANUAL', $11)
+     RETURNING id`,
+    [seasonId, body.matchDate, body.title, body.refereeName ?? null, body.teamAName, body.teamBName, scheduledStart, scheduledEnd, confirmationOpenAt, confirmationOpensHoursBefore, req.user?.id]
+  );
+  res.status(201).json({ id: result.rows[0].id, confirmationOpenAt });
+}));
+
+matchesRouter.post('/schedule/recurring', requireRoles('ADMIN', 'COORDENADOR'), asyncHandler(async (req: AuthRequest, res) => {
+  await ensureScheduleAvailable();
+  const body = validate(recurringScheduleSchema, req.body);
+  const scheduledStart = body.scheduledStart ?? '20:00';
+  const scheduledEnd = body.scheduledEnd ?? '21:00';
+  const confirmationOpensHoursBefore = body.confirmationOpensHoursBefore ?? 48;
+  const start = new Date(`${body.startDate}T12:00:00-03:00`);
+  const end = new Date(`${body.endDate}T12:00:00-03:00`);
+  if ((end.getTime() - start.getTime()) / 86400000 > 370) throw httpError(400, 'Gere no máximo 12 meses de jogos por vez.');
+  const seasonResult = body.seasonId ? await query('SELECT id FROM seasons WHERE id = $1 AND status = \'OPEN\'', [body.seasonId]) : { rowCount: 0 };
+  const seasonId = seasonResult.rowCount ? body.seasonId : null;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const rule = await client.query<{ id: string }>(
+      `INSERT INTO match_schedule_rules (season_id, title, weekday, scheduled_start, scheduled_end, confirmation_opens_hours_before, start_date, end_date, referee_name, team_a_name, team_b_name, created_by)
+       VALUES ($1, $2, $3, $4::TIME, $5::TIME, $6, $7, $8, $9, $10, $11, $12)
+       RETURNING id`,
+      [seasonId, body.title, body.weekday, scheduledStart, scheduledEnd, confirmationOpensHoursBefore, body.startDate, body.endDate, body.refereeName ?? null, body.teamAName, body.teamBName, req.user?.id]
+    );
+    let generated = 0;
+    let skipped = 0;
+    for (let day = start; day <= end; day = addDays(day, 1)) {
+      if (day.getUTCDay() !== body.weekday) continue;
+      const matchDate = formatDate(day);
+      const duplicate = await client.query(
+        `SELECT id FROM matches
+         WHERE ($1::UUID IS NULL OR season_id = $1)
+           AND match_date = $2
+           AND scheduled_start = $3::TIME
+           AND status <> 'CANCELLED'
+         LIMIT 1`,
+        [seasonId, matchDate, scheduledStart]
+      );
+      if (duplicate.rowCount) {
+        skipped += 1;
+        continue;
+      }
+      await client.query(
+        `INSERT INTO matches (season_id, match_date, title, referee_name, team_a_name, team_b_name, scheduled_start, scheduled_end, confirmation_open_at, confirmation_opens_hours_before, schedule_source, schedule_rule_id, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::TIME, $8::TIME, $9::TIMESTAMPTZ, $10, 'RECURRING', $11, $12)`,
+        [seasonId, matchDate, body.title, body.refereeName ?? null, body.teamAName, body.teamBName, scheduledStart, scheduledEnd, buildConfirmationOpenAt(matchDate, scheduledStart, confirmationOpensHoursBefore), confirmationOpensHoursBefore, rule.rows[0].id, req.user?.id]
+      );
+      generated += 1;
+    }
+    await client.query('COMMIT');
+    res.status(201).json({ ruleId: rule.rows[0].id, generated, skipped });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}));
+
+matchesRouter.patch('/:id/schedule', requireRoles('ADMIN', 'COORDENADOR'), asyncHandler(async (req, res) => {
+  await ensureScheduleAvailable();
+  const params = validate(idParamSchema, req.params);
+  const body = validate(schedulePatchSchema, req.body);
+  const current = await query<{ matchDate: string; scheduledStart: string; scheduledEnd: string; confirmationOpensHoursBefore: number; status: string }>('SELECT match_date::TEXT AS "matchDate", scheduled_start::TEXT AS "scheduledStart", scheduled_end::TEXT AS "scheduledEnd", confirmation_opens_hours_before AS "confirmationOpensHoursBefore", status FROM matches WHERE id = $1', [params.id]);
+  if (!current.rowCount) throw httpError(404, 'Jogo agendado não encontrado.');
+  if (current.rows[0].status !== 'DRAFT') throw httpError(409, 'Somente jogos em rascunho podem ter agenda editada.');
+  const matchDate = body.matchDate ?? current.rows[0].matchDate;
+  const scheduledStart = body.scheduledStart ?? current.rows[0].scheduledStart.slice(0, 5);
+  const scheduledEnd = body.scheduledEnd ?? current.rows[0].scheduledEnd.slice(0, 5);
+  if (scheduledEnd <= scheduledStart) throw httpError(400, 'O horário final precisa ser maior que o início.');
+  const confirmationOpensHoursBefore = body.confirmationOpensHoursBefore ?? current.rows[0].confirmationOpensHoursBefore ?? 48;
+  const confirmationOpenAt = buildConfirmationOpenAt(matchDate, scheduledStart, confirmationOpensHoursBefore);
+  const result = await query(
+    `UPDATE matches
+     SET match_date = $2,
+         title = COALESCE($3, title),
+         referee_name = COALESCE($4, referee_name),
+         team_a_name = COALESCE($5, team_a_name),
+         team_b_name = COALESCE($6, team_b_name),
+         scheduled_start = $7::TIME,
+         scheduled_end = $8::TIME,
+         confirmation_open_at = $9::TIMESTAMPTZ,
+         confirmation_opens_hours_before = $10,
+         confirmation_opened_at = CASE WHEN confirmation_opened_at IS NOT NULL AND $9::TIMESTAMPTZ > now() THEN NULL ELSE confirmation_opened_at END,
+         updated_at = now()
+     WHERE id = $1 AND status = 'DRAFT'
+     RETURNING id, confirmation_open_at AS "confirmationOpenAt", confirmation_opens_hours_before AS "confirmationOpensHoursBefore"`,
+    [params.id, matchDate, body.title ?? null, body.refereeName ?? null, body.teamAName ?? null, body.teamBName ?? null, scheduledStart, scheduledEnd, confirmationOpenAt, confirmationOpensHoursBefore]
+  );
+  if (!result.rowCount) throw httpError(409, 'Não foi possível editar o jogo agendado.');
+  res.json(result.rows[0]);
+}));
+
+matchesRouter.delete('/:id/schedule', requireRoles('ADMIN', 'COORDENADOR'), asyncHandler(async (req, res) => {
+  await ensureScheduleAvailable();
+  const params = validate(idParamSchema, req.params);
+  const result = await query('DELETE FROM matches WHERE id = $1 AND status = \'DRAFT\' RETURNING id', [params.id]);
+  if (!result.rowCount) throw httpError(409, 'Somente jogos em rascunho podem ser removidos da agenda.');
+  res.json({ ok: true });
+}));
+
+matchesRouter.post('/:id/open-confirmation', requireRoles('ADMIN', 'COORDENADOR'), asyncHandler(async (req: AuthRequest, res) => {
+  await ensureScheduleAvailable();
+  const params = validate(idParamSchema, req.params);
+  const result = await query(
+    `UPDATE matches
+     SET confirmation_opened_at = now(),
+         confirmation_opened_by = $2,
+         confirmation_open_at = LEAST(COALESCE(confirmation_open_at, now()), now()),
+         updated_at = now()
+     WHERE id = $1 AND status = 'DRAFT'
+     RETURNING id, confirmation_open_at AS "confirmationOpenAt", confirmation_opened_at AS "confirmationOpenedAt"`,
+    [params.id, req.user?.id]
+  );
+  if (!result.rowCount) throw httpError(409, 'Somente jogos em rascunho podem abrir confirmação.');
+  res.json(result.rows[0]);
+}));
+
 matchesRouter.get('/:id', asyncHandler(async (req, res) => {
   const params = validate(idParamSchema, req.params);
   const matchColumns = await getMatchColumns();
@@ -291,9 +510,18 @@ matchesRouter.get('/:id', asyncHandler(async (req, res) => {
     matchColumns.has('draft_clock_running') ? 'draft_clock_running AS "draftClockRunning"' : 'FALSE AS "draftClockRunning"',
     matchColumns.has('draft_saved_at') ? 'draft_saved_at AS "draftSavedAt"' : 'NULL::TIMESTAMPTZ AS "draftSavedAt"'
   ];
+  const scheduleSelect = [
+    matchColumns.has('scheduled_start') ? 'scheduled_start AS "scheduledStart"' : 'TIME \'20:00\' AS "scheduledStart"',
+    matchColumns.has('scheduled_end') ? 'scheduled_end AS "scheduledEnd"' : 'TIME \'21:00\' AS "scheduledEnd"',
+    matchColumns.has('confirmation_open_at') ? 'confirmation_open_at AS "confirmationOpenAt"' : 'NULL::TIMESTAMPTZ AS "confirmationOpenAt"',
+    matchColumns.has('confirmation_opens_hours_before') ? 'confirmation_opens_hours_before AS "confirmationOpensHoursBefore"' : '48::INTEGER AS "confirmationOpensHoursBefore"',
+    matchColumns.has('confirmation_opened_at') ? 'confirmation_opened_at AS "confirmationOpenedAt"' : 'NULL::TIMESTAMPTZ AS "confirmationOpenedAt"',
+    matchColumns.has('schedule_source') ? 'schedule_source AS "scheduleSource"' : '\'MANUAL\' AS "scheduleSource"',
+    matchColumns.has('confirmation_open_at') ? '(confirmation_opened_at IS NOT NULL OR confirmation_open_at <= now()) AS "confirmationOpen"' : '(status = \'DRAFT\') AS "confirmationOpen"'
+  ];
   const match = await query(
     `SELECT id, season_id AS "seasonId", match_date AS "matchDate", title, referee_name AS "refereeName", status,
-      TIME '20:00' AS "scheduledStart", TIME '21:00' AS "scheduledEnd", started_at AS "startedAt", ended_at AS "endedAt",
+      ${scheduleSelect.join(', ')}, started_at AS "startedAt", ended_at AS "endedAt",
       team_a_name AS "teamAName", team_b_name AS "teamBName", team_a_score AS "teamAScore", team_b_score AS "teamBScore",
       ${draftSelect.join(', ')},
       GREATEST(
@@ -301,8 +529,8 @@ matchesRouter.get('/:id', asyncHandler(async (req, res) => {
         FLOOR(
           EXTRACT(
             EPOCH FROM (
-              ((match_date + TIME '21:00') AT TIME ZONE 'America/Sao_Paulo')
-              - COALESCE(started_at, ((match_date + TIME '20:00') AT TIME ZONE 'America/Sao_Paulo'))
+              ((match_date + ${matchColumns.has('scheduled_end') ? 'scheduled_end' : "TIME '21:00'"}) AT TIME ZONE 'America/Sao_Paulo')
+              - COALESCE(started_at, ((match_date + ${matchColumns.has('scheduled_start') ? 'scheduled_start' : "TIME '20:00'"}) AT TIME ZONE 'America/Sao_Paulo'))
             )
           ) / 60
         )
@@ -331,6 +559,18 @@ matchesRouter.get('/:id', asyncHandler(async (req, res) => {
       [params.id]
     )
     : { rows: [] };
+  const attendance = await tableExists('match_attendance_responses')
+    ? await query(
+      `SELECT mar.user_id AS "userId", u.name, u.position, u.avatar_data_url AS "avatarDataUrl",
+        mar.response_status AS "responseStatus", mar.dinner_confirmed AS "dinnerConfirmed",
+        mar.guest_count AS "guestCount", mar.notes, mar.updated_at AS "updatedAt"
+       FROM match_attendance_responses mar
+       JOIN users u ON u.id = mar.user_id
+       WHERE mar.match_id = $1
+       ORDER BY CASE mar.response_status WHEN 'JOGAR' THEN 1 WHEN 'PRESENTE_SEM_JOGAR' THEN 2 ELSE 3 END, u.name ASC`,
+      [params.id]
+    )
+    : { rows: [] };
   const lineA = players.rows.filter((player: any) => player.team === 'A' && player.roleInMatch === 'LINHA' && player.rotationOrder);
   const lineB = players.rows.filter((player: any) => player.team === 'B' && player.roleInMatch === 'LINHA' && player.rotationOrder);
 
@@ -339,6 +579,7 @@ matchesRouter.get('/:id', asyncHandler(async (req, res) => {
     players: players.rows,
     events: events.rows,
     corrections: corrections.rows,
+    attendance: attendance.rows,
     rotation: {
       A: buildTeamRotationPlan(lineA.map((player: any) => ({ id: player.userId, name: player.name, rotationOrder: player.rotationOrder, startsOnBench: player.startsOnBench })), match.rows[0].availableMinutes),
       B: buildTeamRotationPlan(lineB.map((player: any) => ({ id: player.userId, name: player.name, rotationOrder: player.rotationOrder, startsOnBench: player.startsOnBench })), match.rows[0].availableMinutes)
@@ -346,9 +587,40 @@ matchesRouter.get('/:id', asyncHandler(async (req, res) => {
   });
 }));
 
+matchesRouter.put('/:id/attendance/me', asyncHandler(async (req: AuthRequest, res) => {
+  const params = validate(idParamSchema, req.params);
+  const body = validate(attendanceSchema, req.body);
+  if (!await tableExists('match_attendance_responses')) throw httpError(409, 'Confirmação de presença indisponível: execute migrations/11_confirmacao_presenca_jantar.sql no PostgreSQL da Railway.');
+
+  const matchColumns = await getMatchColumns();
+  const match = await query<{ status: string; confirmationOpen: boolean }>(
+    matchColumns.has('confirmation_open_at')
+      ? 'SELECT status, (confirmation_opened_at IS NOT NULL OR confirmation_open_at <= now()) AS "confirmationOpen" FROM matches WHERE id = $1'
+      : 'SELECT status, TRUE AS "confirmationOpen" FROM matches WHERE id = $1',
+    [params.id]
+  );
+  if (!match.rowCount) throw httpError(404, 'Partida não encontrada.');
+  if (match.rows[0].status !== 'DRAFT') throw httpError(409, 'A confirmação de presença só fica aberta enquanto a súmula está em rascunho.');
+  if (!match.rows[0].confirmationOpen) throw httpError(409, 'A confirmação desta rodada ainda não foi aberta pela agenda ou coordenação.');
+
+  const result = await query(
+    `INSERT INTO match_attendance_responses (match_id, user_id, response_status, dinner_confirmed, guest_count, notes, responded_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, now(), now())
+     ON CONFLICT (match_id, user_id) DO UPDATE SET
+      response_status = EXCLUDED.response_status,
+      dinner_confirmed = EXCLUDED.dinner_confirmed,
+      guest_count = EXCLUDED.guest_count,
+      notes = EXCLUDED.notes,
+      updated_at = now()
+     RETURNING user_id AS "userId", response_status AS "responseStatus", dinner_confirmed AS "dinnerConfirmed", guest_count AS "guestCount", notes, updated_at AS "updatedAt"`,
+    [params.id, req.user?.id, body.responseStatus, body.dinnerConfirmed, body.guestCount, body.notes?.trim() || null]
+  );
+  res.json(result.rows[0]);
+}));
+
 matchesRouter.post('/:id/start', requireRoles('ADMIN', 'COORDENADOR'), asyncHandler(async (req, res) => {
   await validateLineupReady(req.params.id);
-  const result = await query("UPDATE matches SET status = 'RUNNING', started_at = clock_timestamp(), updated_at = clock_timestamp() WHERE id = $1 AND status = 'DRAFT' AND clock_timestamp() < ((match_date + TIME '21:00') AT TIME ZONE 'America/Sao_Paulo') RETURNING id, status, started_at AS \"startedAt\"", [req.params.id]);
+  const result = await query("UPDATE matches SET status = 'RUNNING', started_at = clock_timestamp(), updated_at = clock_timestamp() WHERE id = $1 AND status = 'DRAFT' AND clock_timestamp() < ((match_date + scheduled_end) AT TIME ZONE 'America/Sao_Paulo') RETURNING id, status, started_at AS \"startedAt\"", [req.params.id]);
   if (!result.rowCount) throw httpError(409, 'Somente súmulas em rascunho e dentro do horário da quadra podem ser iniciadas.');
   res.json(result.rows[0]);
 }));

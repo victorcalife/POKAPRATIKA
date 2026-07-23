@@ -46,6 +46,7 @@ h2 { font-size: 1rem; letter-spacing: -.02em; }
 .alert { width: 100%; background: rgba(255, 87, 87, .16); border: 1px solid rgba(255, 87, 87, .3); text-align: left; }
 .mini-loading { font-size: .78rem; color: #3b82f6; }
 .context-row { display: flex; gap: 8px; align-items: center; min-height: 36px; }
+.schedule-toolbar { justify-content: flex-end; min-height: 32px; }
 select, input { width: 100%; min-height: 38px; color: #f5fbf7; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.13); border-radius: 12px; padding: 8px 10px; outline: none; }
 select option, select optgroup { color: #000; background: #fff; }
 textarea { width: 100%; min-height: 120px; color: #f5fbf7; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.13); border-radius: 12px; padding: 8px 10px; outline: none; resize: vertical; }
@@ -105,6 +106,17 @@ textarea { width: 100%; min-height: 120px; color: #f5fbf7; background: rgba(255,
 .award-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 .award-cards article { display: grid; gap: 5px; padding: 10px; border-radius: 16px; background: rgba(255,255,255,.06); }
 .award-cards span { color: #a9b9af; font-size: .8rem; }
+.rules-center { max-height: min(76dvh, 720px); }
+.rule-create { display: grid; grid-template-columns: minmax(180px, 1.2fr) .8fr .9fr 72px auto; gap: 7px; padding: 8px; border-radius: 15px; background: rgba(255,255,255,.045); border: 1px solid rgba(255,255,255,.09); }
+.rule-list { grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); }
+.rule-card { grid-template-columns: 1fr auto; align-content: start; }
+.rule-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.rule-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 12px; font-size: 1rem; font-weight: 950; }
+.rule-grid { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.award-board-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px; }
+.award-board { display: grid; align-content: start; gap: 7px; padding: 10px; border-radius: 16px; background: rgba(255,255,255,.055); border: 1px solid rgba(255,255,255,.085); }
+.board-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 6px 8px; border-radius: 11px; background: rgba(255,255,255,.055); font-size: .78rem; }
+.board-row em { color: #ffe39b; font-style: normal; font-weight: 950; }
 .selection-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 9px; border-radius: 16px; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08); }
 .selection-grid label { display: grid; gap: 4px; }
 .selection-grid label span { color: #d9e8de; font-size: .74rem; font-weight: 800; }
@@ -166,10 +178,20 @@ textarea { width: 100%; min-height: 120px; color: #f5fbf7; background: rgba(255,
 .match-ops-grid { display: grid; grid-template-columns: .82fr 1.18fr; gap: 10px; min-height: 0; }
 .broadcast-panel { align-content: start; position: sticky; top: 0; }
 .match-sheet-panel { min-height: 0; display: grid; align-content: start; gap: 9px; }
+.attendance-panel { background: rgba(255,255,255,.045); border-color: rgba(147,197,253,.16); }
+.match-day-checklist { display: flex; gap: 6px; flex-wrap: wrap; padding: 7px; border-radius: 14px; background: rgba(7,17,31,.34); border: 1px solid rgba(255,255,255,.08); }
+.attendance-form { display: grid; grid-template-columns: 1.25fr auto 120px minmax(180px, 1fr) auto; gap: 7px; align-items: center; }
+.segmented { display: flex; gap: 5px; flex-wrap: wrap; }
+.attendance-list { max-height: 180px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
 .profile-modal { background: rgba(3, 8, 18, .68); backdrop-filter: blur(4px); }
 .profile-modal-card { width: min(940px, 100%); max-height: min(88dvh, 760px); overflow: auto; display: grid; gap: 10px; padding: 14px; border-radius: 20px; border: 1px solid rgba(255,255,255,.14); background: rgba(7, 17, 31, .88); box-shadow: 0 28px 80px rgba(0,0,0,.42); }
 .profile-modal .card-head select { display: none; }
 .modal-card { width: min(460px, 100%); padding: 16px; display: grid; gap: 9px; }
+.prompt-modal { z-index: 12; place-items: start center; padding-top: 92px; background: rgba(0,0,0,.34); pointer-events: none; }
+.confirmation-popup { width: min(540px, calc(100% - 18px)); border-color: rgba(255,205,86,.28); background: linear-gradient(145deg, rgba(7,17,31,.98), rgba(22,43,70,.96)); box-shadow: 0 22px 70px rgba(0,0,0,.5); pointer-events: auto; }
+.schedule-modal { gap: 10px; }
+.schedule-form { display: grid; gap: 8px; padding: 9px; border-radius: 16px; background: rgba(255,255,255,.045); border: 1px solid rgba(255,255,255,.09); }
+.schedule-list { max-height: 330px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
 .password-card { width: min(420px, 100%); }
 .payment-card { width: min(520px, 100%); }
 .admin-modal-card { width: min(620px, 100%); }
@@ -269,7 +291,7 @@ textarea { width: 100%; min-height: 120px; color: #f5fbf7; background: rgba(255,
   .match-ops-grid, .match-list, .match-history-row, .payment-list, .admin-action-grid, .admin-list, .admin-users { grid-template-columns: 1fr; }
   .broadcast-panel { position: static; }
   .inline-form { grid-template-columns: 1fr; }
-  .match-meta, .player-line, .event-form, .team-builder, .team-board, .team-player, .draw-dashboard, .sheet-steps, .draw-meta { grid-template-columns: 1fr; }
+  .match-meta, .player-line, .event-form, .team-builder, .team-board, .team-player, .draw-dashboard, .sheet-steps, .draw-meta, .attendance-form { grid-template-columns: 1fr; }
   .draw-hero, .draw-action, .draw-footer { align-items: stretch; flex-direction: column; }
   .draw-button, .draw-footer .primary { width: 100%; }
   .team-player.draw-row, .team-player.roster-row { grid-template-columns: 1fr; }
@@ -278,6 +300,9 @@ textarea { width: 100%; min-height: 120px; color: #f5fbf7; background: rgba(255,
   .profile-pill { flex-wrap: wrap; justify-content: flex-end; }
   .account-menu { position: fixed; top: 76px; right: 8px; left: auto; }
   .context-row { overflow: auto; }
+  .schedule-toolbar { justify-content: flex-start; }
+  .prompt-modal { padding-top: 78px; }
+  .schedule-list { grid-template-columns: 1fr; }
   .match-scoreline { grid-template-columns: 1fr auto 1fr; }
   .match-icons { justify-content: flex-start; }
   .championship-wrap { max-height: 58dvh; }

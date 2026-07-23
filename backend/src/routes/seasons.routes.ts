@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { query } from '../db/pool';
 import { requireAuth, requireRoles } from '../security/auth';
+import { consolidateRankingAwards } from '../services/awardRules';
 import { AuthRequest } from '../types';
 import { asyncHandler, httpError, validate } from '../utils/http';
 
@@ -32,50 +33,7 @@ const standingImportRowSchema = z.object({
 const standingImportSchema = z.object({ replace: z.boolean().default(true), rows: z.array(standingImportRowSchema).min(1).max(200) });
 
 async function generateRankingAwards(seasonId: string): Promise<void> {
-  const rankingAwards = [
-    { category: 'CAMPEAO_PONTOS', placement: 1, order: 'total_points DESC, wins DESC, games_played DESC, goals DESC' },
-    { category: 'VICE_PONTOS', placement: 2, order: 'total_points DESC, wins DESC, games_played DESC, goals DESC' },
-    { category: 'TERCEIRO_PONTOS', placement: 3, order: 'total_points DESC, wins DESC, games_played DESC, goals DESC' },
-    { category: 'MAIS_ASSIDUO', placement: 1, order: '(games_played + presences) DESC, games_played DESC, total_points DESC' },
-    { category: 'VICE_ASSIDUO', placement: 2, order: '(games_played + presences) DESC, games_played DESC, total_points DESC' },
-    { category: 'TERCEIRO_ASSIDUO', placement: 3, order: '(games_played + presences) DESC, games_played DESC, total_points DESC' },
-    { category: 'ARTILHEIRO', placement: 1, order: 'net_goals DESC, goals DESC, games_played ASC' },
-    { category: 'GARCOM', placement: 1, order: 'assists DESC, games_played ASC, total_points DESC' }
-  ];
-
-  await query("DELETE FROM season_awards WHERE season_id = $1 AND source = 'RANKING'", [seasonId]);
-  await query(
-    `DELETE FROM athlete_badges
-     WHERE season_id = $1
-       AND code = ANY($2::TEXT[])`,
-    [seasonId, rankingAwards.map((award) => award.category)]
-  );
-
-  for (const award of rankingAwards) {
-    const minimumMetric = award.category === 'ARTILHEIRO' ? 'goals > 0' : award.category === 'GARCOM' ? 'assists > 0' : '(games_played > 0 OR presences > 0)';
-    await query(
-      `INSERT INTO season_awards (season_id, category_code, user_id, placement, source)
-       SELECT $1, $2, ranked.user_id, $3, 'RANKING'
-       FROM (
-        SELECT user_id, row_number() OVER (ORDER BY ${award.order}, user_id ASC)::INTEGER AS position
-        FROM season_standings
-        WHERE season_id = $1 AND ${minimumMetric}
-       ) ranked
-       WHERE ranked.position = $3
-       ON CONFLICT (season_id, category_code, placement) DO UPDATE SET user_id = EXCLUDED.user_id, source = EXCLUDED.source`,
-      [seasonId, award.category, award.placement]
-    );
-  }
-
-  await query(
-    `INSERT INTO athlete_badges (user_id, season_id, code, label)
-     SELECT sa.user_id, sa.season_id, sa.category_code, ac.label
-     FROM season_awards sa
-     JOIN award_categories ac ON ac.code = sa.category_code
-     WHERE sa.season_id = $1 AND sa.source = 'RANKING'
-     ON CONFLICT (user_id, season_id, code) DO NOTHING`,
-    [seasonId]
-  );
+  await consolidateRankingAwards(seasonId);
 }
 
 seasonsRouter.use(requireAuth);
@@ -145,7 +103,7 @@ seasonsRouter.get('/:id/rankings', asyncHandler(async (req, res) => {
   res.json({ goals: goals.rows, assists: assists.rows, presence: presence.rows, cards: cards.rows });
 }));
 
-seasonsRouter.post('/:id/standing-adjustments/import', requireRoles('ADMIN', 'COORDENADOR'), asyncHandler(async (req: AuthRequest, res) => {
+seasonsRouter.post('/:id/standing-adjustments/import', requireRoles('ADMIN'), asyncHandler(async (req: AuthRequest, res) => {
   const body = validate(standingImportSchema, req.body);
   const season = await query('SELECT id FROM seasons WHERE id = $1', [req.params.id]);
   if (!season.rowCount) throw httpError(404, 'Temporada não encontrada.');
