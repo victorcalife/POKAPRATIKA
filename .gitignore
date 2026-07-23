@@ -9,5 +9,6 @@ yarn-error.log*
 pnpm-debug.log*
 coverage/
 .vscode/
+PROJECT_CONTEXT.md
 docs/
 migrations/
