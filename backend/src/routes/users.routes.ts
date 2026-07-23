@@ -20,17 +20,47 @@ const userSchema = z.object({
 });
 
 const updateUserSchema = userSchema.partial().extend({ active: z.boolean().optional(), avatarDataUrl: z.string().max(900000).nullable().optional() });
+const adminPasswordSchema = z.object({ password: z.string().min(8) });
 const avatarSchema = z.object({
   avatarDataUrl: z.string().max(900000).regex(/^data:image\/(png|jpeg|jpg|webp);base64,[A-Za-z0-9+/=]+$/, 'Envie uma imagem PNG, JPG ou WEBP válida.').nullable()
 });
 
+async function ensureNotRemovingLastAdmin(userId: string, nextRole?: string, nextActive?: boolean): Promise<void> {
+  const current = await query<{ role: string; active: boolean }>('SELECT role, active FROM users WHERE id = $1', [userId]);
+  if (!current.rowCount) throw httpError(404, 'Usuário não encontrado.');
+  const currentUser = current.rows[0];
+  if (currentUser.role !== 'ADMIN' || !currentUser.active) return;
+  const finalRole = nextRole ?? currentUser.role;
+  const finalActive = nextActive ?? currentUser.active;
+  if (finalRole === 'ADMIN' && finalActive) return;
+  const admins = await query<{ total: string }>("SELECT count(*) AS total FROM users WHERE role = 'ADMIN' AND active = TRUE AND id <> $1", [userId]);
+  if (Number(admins.rows[0].total) === 0) throw httpError(409, 'Não é possível remover/inativar o último ADMIN ativo do sistema.');
+}
+
+async function createActivationToken(userId: string): Promise<string> {
+  const token = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  await query('UPDATE password_reset_tokens SET used_at = now() WHERE user_id = $1 AND used_at IS NULL', [userId]);
+  await query('INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, now() + interval \'7 days\')', [userId, tokenHash]);
+  return token;
+}
+
 usersRouter.use(requireAuth);
 
-usersRouter.get('/', asyncHandler(async (_req, res) => {
+usersRouter.get('/', asyncHandler(async (req: AuthRequest, res) => {
+  const isCoordinator = req.user?.role === 'ADMIN' || req.user?.role === 'COORDENADOR';
   const result = await query(
-    `SELECT id, name, email, role, position, avatar_data_url AS "avatarDataUrl", active, created_at AS "createdAt"
+    `SELECT id, name,
+      CASE WHEN $1::BOOLEAN THEN email ELSE '' END AS email,
+      CASE WHEN $1::BOOLEAN THEN role ELSE 'ATLETA' END AS role,
+      position,
+      avatar_data_url AS "avatarDataUrl",
+      CASE WHEN $1::BOOLEAN THEN active ELSE TRUE END AS active,
+      created_at AS "createdAt"
      FROM users
-     ORDER BY active DESC, name ASC`
+     WHERE $1::BOOLEAN = TRUE OR active = TRUE
+     ORDER BY active DESC, name ASC`,
+    [isCoordinator]
   );
   res.json(result.rows);
 }));
@@ -54,6 +84,7 @@ usersRouter.get('/:id/career', asyncHandler(async (req, res) => {
      WHERE id = $1 AND active = TRUE`,
     [req.params.id]
   );
+  if (!profile.rowCount) throw httpError(404, 'Atleta ativo não encontrado.');
 
   const totals = await query(
     `SELECT
@@ -142,6 +173,7 @@ usersRouter.post('/', requireRoles('ADMIN', 'COORDENADOR'), asyncHandler(async (
 
 usersRouter.patch('/:id', requireRoles('ADMIN'), asyncHandler(async (req, res) => {
   const body = validate(updateUserSchema, req.body);
+  await ensureNotRemovingLastAdmin(req.params.id, body.role, body.active);
   const passwordHash = body.password ? await hashPassword(body.password) : null;
   const result = await query(
     `UPDATE users SET
@@ -157,5 +189,25 @@ usersRouter.patch('/:id', requireRoles('ADMIN'), asyncHandler(async (req, res) =
      RETURNING id, name, email, role, position, avatar_data_url AS "avatarDataUrl", active`,
     [req.params.id, body.name?.trim(), body.email, passwordHash, body.role, body.position, body.active, Object.prototype.hasOwnProperty.call(body, 'avatarDataUrl'), body.avatarDataUrl]
   );
+  if (!result.rowCount) throw httpError(404, 'Usuário não encontrado.');
   res.json(result.rows[0]);
+}));
+
+usersRouter.post('/:id/send-activation', requireRoles('ADMIN', 'COORDENADOR'), asyncHandler(async (req: AuthRequest, res) => {
+  const result = await query<{ id: string; name: string; email: string; role: string; active: boolean }>('SELECT id, name, email, role, active FROM users WHERE id = $1', [req.params.id]);
+  const user = result.rows[0];
+  if (!user) throw httpError(404, 'Usuário não encontrado.');
+  if (req.user?.role === 'COORDENADOR' && user.role !== 'ATLETA') throw httpError(403, 'Coordenador só pode reenviar convite para atletas.');
+  if (!user.active) throw httpError(409, 'Reative o usuário antes de reenviar convite.');
+  const token = await createActivationToken(user.id);
+  const activationEmailSent = await sendAccountActivationEmail(user.email, user.name, token);
+  res.json({ ok: true, activationEmailSent });
+}));
+
+usersRouter.post('/:id/password', requireRoles('ADMIN'), asyncHandler(async (req, res) => {
+  const body = validate(adminPasswordSchema, req.body);
+  const result = await query('UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1 RETURNING id', [req.params.id, await hashPassword(body.password)]);
+  if (!result.rowCount) throw httpError(404, 'Usuário não encontrado.');
+  await query('UPDATE password_reset_tokens SET used_at = now() WHERE user_id = $1 AND used_at IS NULL', [req.params.id]);
+  res.json({ ok: true });
 }));

@@ -1,4 +1,4 @@
-const requiredKeys = ['DATABASE_URL', 'JWT_SECRET', 'NODE_ENV', 'PORT', 'ALLOWED_ORIGINS'] as const;
+const requiredKeys = ['DATABASE_URL', 'JWT_SECRET', 'NODE_ENV', 'PORT', 'ALLOWED_ORIGINS', 'FRONTEND_URL'] as const;
 
 for (const key of requiredKeys) {
   if (!process.env[key]) {

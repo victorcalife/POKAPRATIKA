@@ -106,6 +106,7 @@ seasonsRouter.post('/:id/start', requireRoles('ADMIN', 'COORDENADOR'), asyncHand
      RETURNING id, name, year, status, voting_open AS "votingOpen"`,
     [req.params.id]
   );
+  if (!result.rowCount) throw httpError(409, 'Temporada não encontrada ou já encerrada.');
   res.json(result.rows[0]);
 }));
 
@@ -119,6 +120,7 @@ seasonsRouter.post('/:id/close', requireRoles('ADMIN', 'COORDENADOR'), asyncHand
   if (result.rowCount) {
     await generateRankingAwards(req.params.id);
   }
+  if (!result.rowCount) throw httpError(409, 'Somente temporada aberta pode ser encerrada.');
   res.json(result.rows[0]);
 }));
 

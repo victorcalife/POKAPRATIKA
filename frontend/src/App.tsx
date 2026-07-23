@@ -24,7 +24,9 @@ type CareerProfile = {
   suspensions: Array<{ id: string; seasonName?: string | null; reason: string; servedAt?: string | null }>;
 };
 type PaymentRecord = { id?: string; userId?: string; userName?: string; referenceMonth: string; dueDate: string; amountCents: number; status: 'PENDING' | 'PAID' | 'LATE' | 'WAIVED'; paidAt?: string | null; earnsPoint: boolean; notes?: string | null };
+type PaymentSummary = { totalCents: number; paidCents: number; openCents: number; total: number; paid: number; pending: number; late: number; waived: number; earlyPoints: number };
 type AwardCategory = { code: string; label: string; votingEnabled: boolean };
+type AwardSetting = AwardCategory & { adminOnly: boolean };
 type MyVote = { categoryCode: string; voteSlot: number; votedUserId: string };
 type AwardResult = { categoryCode: string; label: string; voteSlot: number; userId: string; name: string; votes: number };
 type StandingImportResult = { imported: Array<{ name: string; email: string; totalPoints: number }>; skipped: Array<{ identifier: string; reason: string }> };
@@ -100,6 +102,19 @@ function formatBrasiliaTime(value?: string | null): string {
   return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'medium' }).format(new Date(value));
 }
 
+function downloadCsv(filename: string, rows: Array<Record<string, string | number | boolean | null | undefined>>) {
+  if (!rows.length) return;
+  const headers = Object.keys(rows[0]);
+  const escape = (value: string | number | boolean | null | undefined) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+  const csv = [headers.join(';'), ...rows.map((row) => headers.map((header) => escape(row[header])).join(';'))].join('\n');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 export function App() {
   const passwordPath = window.location.pathname === '/ativar-conta' || window.location.pathname === '/resetar-senha' ? window.location.pathname : '';
   const [auth, setAuth] = useState<AuthPayload | null>(() => {
@@ -109,7 +124,7 @@ export function App() {
   const api = useMemo(() => new ApiClient(auth?.token ?? null), [auth?.token]);
   const [view, setView] = useState<View>('temporada');
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+      const [loading, setLoading] = useState(false);
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [activeSeasonId, setActiveSeasonId] = useState('');
   const [standings, setStandings] = useState<Standing[]>([]);
@@ -238,7 +253,7 @@ export function App() {
   {view === 'perfis' && <ProfilesPanel api={api} users={users} currentUserId={auth.user.id} onCurrentUserUpdated={updateAuthenticatedUser} />}
       {view === 'sumulas' && <MatchesPanel api={api} canCoordinate={canCoordinate} users={users} matches={matches} activeSeasonId={activeSeasonId} onReload={loadData} selectedMatch={selectedMatch} setSelectedMatch={setSelectedMatch} />}
       {view === 'pagamentos' && <PaymentsPanel api={api} canCoordinate={canCoordinate} users={users} activeSeasonId={activeSeasonId} />}
-      {view === 'premios' && <AwardsPanel api={api} users={users} activeSeason={activeSeason} isAdmin={isAdmin} />}
+      {view === 'premios' && <><AwardsPanel api={api} users={users} activeSeason={activeSeason} isAdmin={isAdmin} />{isAdmin && <AwardSettingsCard api={api} />}</>}
       {view === 'admin' && canCoordinate && <AdminPanel api={api} users={users} seasons={seasons} points={points} activeSeasonId={activeSeasonId} onReload={loadData} isAdmin={isAdmin} />}
     </main>
   );
@@ -335,7 +350,7 @@ function SeasonPanel({ api, standings, rankings, suspensions, matches, canCoordi
   return (
     <div className="grid two">
       <section className="card compact">
-        <div className="card-head"><h2>Pontos corridos</h2><span className="status open">{standings.length} atletas</span></div>
+        <div className="card-head"><h2>Pontos corridos</h2><button className="ghost" onClick={() => downloadCsv('poka-pratika-classificacao.csv', standings.map((row) => ({ posicao: row.position, atleta: row.name, pontos: row.total_points, jogos: row.games_played, vitorias: row.wins, empates: row.draws, derrotas: row.losses, presencasSemJogar: row.presences, mensalidades: row.paid_months, gols: row.goals, golsContra: row.own_goals, assistencias: row.assists, cartoes: row.total_cards, saldoEquipe: row.team_goal_balance })))}>Exportar CSV</button><span className="status open">{standings.length} atletas</span></div>
         {podium.length > 0 ? <div className="podium">{podium.map((row, index) => <article className={`podium-card place-${index + 1}`} key={row.user_id}><span>{index === 0 ? '👑' : index === 1 ? '🥈' : '🥉'}</span><strong>{row.name}</strong><small>{row.total_points} pts • {row.games_played} jogos • {row.presences} pres.</small></article>)}</div> : <EmptyState title="Temporada pronta para começar" text="Assim que a primeira súmula for confirmada, o pódio e a tabela ganham vida." />}
         <div className="stat-grid season-stats"><span><b>{totals.points}</b> pontos</span><span><b>{totals.games}</b> jogos</span><span><b>{totals.goals}</b> gols</span><span><b>{totals.presences}</b> presenças</span></div>
         <div className="table-cards">
@@ -431,6 +446,7 @@ function ProfilesPanel({ api, users, currentUserId, onCurrentUserUpdated }: { ap
 function MatchesPanel({ api, canCoordinate, users, matches, activeSeasonId, onReload, selectedMatch, setSelectedMatch }: { api: ApiClient; canCoordinate: boolean; users: User[]; matches: MatchListItem[]; activeSeasonId: string; onReload: () => Promise<void>; selectedMatch: MatchDetail | null; setSelectedMatch: (match: MatchDetail | null) => void }) {
   const [clockRunning, setClockRunning] = useState(false);
   const [seconds, setSeconds] = useState(0);
+  const [cancelConfirm, setCancelConfirm] = useState(false);
 
   useEffect(() => {
     if (!clockRunning || selectedMatch?.status === 'RUNNING') return;
@@ -458,6 +474,7 @@ function MatchesPanel({ api, canCoordinate, users, matches, activeSeasonId, onRe
     setSelectedMatch(await api.request<MatchDetail>(`/matches/${id}`));
     setSeconds(0);
     setClockRunning(false);
+    setCancelConfirm(false);
   }
 
   async function startSelectedMatch() {
@@ -469,7 +486,7 @@ function MatchesPanel({ api, canCoordinate, users, matches, activeSeasonId, onRe
   }
 
   async function cancelSelectedMatch() {
-    if (!selectedMatch || !window.confirm('Cancelar esta súmula? Ela sai do fluxo operacional e não pontua a temporada.')) return;
+    if (!selectedMatch) return;
     await api.request(`/matches/${selectedMatch.id}/cancel`, { method: 'POST' });
     await openMatch(selectedMatch.id);
     await onReload();
@@ -489,8 +506,10 @@ function MatchesPanel({ api, canCoordinate, users, matches, activeSeasonId, onRe
           <div className="scoreboard"><b>{selectedMatch.teamAName}</b><strong>{selectedMatch.status === 'CONFIRMED' ? selectedMatch.teamAScore : selectedMatch.draftTeamAScore ?? selectedMatch.teamAScore} x {selectedMatch.status === 'CONFIRMED' ? selectedMatch.teamBScore : selectedMatch.draftTeamBScore ?? selectedMatch.teamBScore}</strong><b>{selectedMatch.teamBName}</b></div>
           <div className="clock">{String(Math.floor(seconds / 60)).padStart(2, '0')}:{String(seconds % 60).padStart(2, '0')}</div>
           {selectedMatch.startedAt && <p className="muted">Jogo iniciado oficialmente em {formatBrasiliaTime(selectedMatch.startedAt)} — horário de Brasília. A quadra encerra às 21:00; tempo útil desta súmula: {selectedMatch.availableMinutes ?? 60} min.</p>}
-          <div className="actions"><button className="primary" disabled={selectedMatch.status === 'RUNNING'} onClick={() => setClockRunning((value) => !value)}>{selectedMatch.status === 'RUNNING' ? 'Cronômetro oficial ativo' : clockRunning ? 'Pausar rascunho' : 'Iniciar rascunho'}</button><button className="ghost" disabled={selectedMatch.status === 'RUNNING'} onClick={() => setSeconds(0)}>Zerar</button>{canCoordinate && selectedMatch.status === 'DRAFT' && <button className="primary" onClick={() => void startSelectedMatch()}>Jogo iniciado</button>}{canCoordinate && ['DRAFT', 'RUNNING', 'SUBMITTED'].includes(selectedMatch.status) && <button className="ghost danger-action" onClick={() => void cancelSelectedMatch()}>Cancelar súmula</button>}</div>
+          <div className="actions"><button className="primary" disabled={selectedMatch.status === 'RUNNING'} onClick={() => setClockRunning((value) => !value)}>{selectedMatch.status === 'RUNNING' ? 'Cronômetro oficial ativo' : clockRunning ? 'Pausar rascunho' : 'Iniciar rascunho'}</button><button className="ghost" disabled={selectedMatch.status === 'RUNNING'} onClick={() => setSeconds(0)}>Zerar</button>{canCoordinate && selectedMatch.status === 'DRAFT' && <button className="primary" onClick={() => void startSelectedMatch()}>Jogo iniciado</button>}{canCoordinate && ['DRAFT', 'RUNNING', 'SUBMITTED'].includes(selectedMatch.status) && (cancelConfirm ? <><button className="ghost danger-action" onClick={() => void cancelSelectedMatch()}>Confirmar cancelamento</button><button className="ghost" onClick={() => setCancelConfirm(false)}>Manter súmula</button></> : <button className="ghost danger-action" onClick={() => setCancelConfirm(true)}>Cancelar súmula</button>)}</div>
+          {cancelConfirm && <p className="muted">Cancelar tira esta súmula do fluxo operacional e ela não pontua a temporada.</p>}
           <SubstitutionManager rotation={selectedMatch.rotation} currentMinute={Math.floor(seconds / 60)} />
+          {canCoordinate && ['DRAFT', 'RUNNING', 'SUBMITTED'].includes(selectedMatch.status) && <ExistingLineupEditor api={api} match={selectedMatch} users={users} onSaved={async () => { await openMatch(selectedMatch.id); await onReload(); }} />}
           <div className="chips">{selectedMatch.events.map((event, index) => <span className="chip" key={index}>{event.minute}' {eventLabel(event.eventType)}</span>)}</div>
           {canCoordinate && selectedMatch.status !== 'CANCELLED' && <MatchScoreEditor api={api} match={selectedMatch} users={users} clockSeconds={seconds} clockRunning={clockRunning} onSaved={async () => { await openMatch(selectedMatch.id); await onReload(); }} />}
           <CorrectionHistory corrections={selectedMatch.corrections ?? []} />
@@ -498,6 +517,134 @@ function MatchesPanel({ api, canCoordinate, users, matches, activeSeasonId, onRe
       </section>
     </div>
   );
+}
+
+function ExistingLineupEditor({ api, match, users, onSaved }: { api: ApiClient; match: MatchDetail; users: User[]; onSaved: () => Promise<void> }) {
+  const [open, setOpen] = useState(match.status === 'DRAFT' && match.players.length === 0);
+  const [title, setTitle] = useState(match.title);
+  const [date, setDate] = useState(match.matchDate.slice(0, 10));
+  const [refereeName, setRefereeName] = useState(match.refereeName ?? '');
+  const [teamAName, setTeamAName] = useState(match.teamAName);
+  const [teamBName, setTeamBName] = useState(match.teamBName);
+  const [players, setPlayers] = useState<MatchDraftPlayer[]>([]);
+  const [query, setQuery] = useState('');
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    setTitle(match.title);
+    setDate(match.matchDate.slice(0, 10));
+    setRefereeName(match.refereeName ?? '');
+    setTeamAName(match.teamAName);
+    setTeamBName(match.teamBName);
+    setPlayers(match.players.map((player, index) => {
+      const user = users.find((item) => item.id === player.userId);
+      const team = player.team as MatchDraftPlayer['team'];
+      return {
+        userId: player.userId,
+        name: player.name,
+        email: user?.email ?? '',
+        position: user?.position ?? 'MC',
+        team,
+        roleInMatch: team === 'PRESENTE_SEM_JOGAR' ? 'PRESENTE_SEM_JOGAR' : player.roleInMatch === 'GOLEIRO' ? 'GOLEIRO' : 'LINHA',
+        drawOrder: String(player.drawOrder ?? index + 1),
+        startsOnBench: player.startsOnBench
+      };
+    }));
+    setMessage('');
+  }, [match.id, match.title, match.matchDate, match.refereeName, match.teamAName, match.teamBName, match.players, users]);
+
+  const assignedIds = new Set(players.map((player) => player.userId));
+  const search = query.trim().toLowerCase();
+  const searchResults = search.length < 3 ? [] : users.filter((user) => user.active !== false && !assignedIds.has(user.id) && `${user.name} ${user.email}`.toLowerCase().includes(search)).slice(0, 8);
+  const teamA = players.filter((player) => player.team === 'A');
+  const teamB = players.filter((player) => player.team === 'B');
+  const presentOnly = players.filter((player) => player.team === 'PRESENTE_SEM_JOGAR');
+
+  function payload() {
+    const currentTeamA = players.filter((player) => player.team === 'A');
+    const currentTeamB = players.filter((player) => player.team === 'B');
+    return players.map((player) => ({
+      userId: player.userId,
+      team: player.team,
+      roleInMatch: player.team === 'PRESENTE_SEM_JOGAR' ? 'PRESENTE_SEM_JOGAR' : player.roleInMatch,
+      drawOrder: player.drawOrder ? Number(player.drawOrder) : null,
+      rotationOrder: player.team === 'A' ? currentTeamA.findIndex((item) => item.userId === player.userId) + 1 : player.team === 'B' ? currentTeamB.findIndex((item) => item.userId === player.userId) + 1 : null,
+      startsOnBench: player.startsOnBench,
+      present: true
+    }));
+  }
+
+  function addPlayer(user: User, team: MatchDraftPlayer['team']) {
+    const position = user.position ?? 'MC';
+    setPlayers((list) => [...list, { userId: user.id, name: user.name, email: user.email, position, team, roleInMatch: team === 'PRESENTE_SEM_JOGAR' ? 'PRESENTE_SEM_JOGAR' : position === 'GO' ? 'GOLEIRO' : 'LINHA', drawOrder: String(list.length + 1), startsOnBench: false }]);
+    setQuery('');
+  }
+
+  function updatePlayer(userId: string, patch: Partial<MatchDraftPlayer>) {
+    setPlayers((list) => list.map((player) => player.userId === userId ? { ...player, ...patch } : player));
+  }
+
+  function movePlayer(userId: string, direction: -1 | 1) {
+    setPlayers((list) => {
+      const player = list.find((item) => item.userId === userId);
+      if (!player || player.team === 'PRESENTE_SEM_JOGAR') return list;
+      const teamRows = list.filter((item) => item.team === player.team);
+      const index = teamRows.findIndex((item) => item.userId === userId);
+      const targetIndex = index + direction;
+      if (targetIndex < 0 || targetIndex >= teamRows.length) return list;
+      const reordered = [...teamRows];
+      [reordered[index], reordered[targetIndex]] = [reordered[targetIndex], reordered[index]];
+      return list.filter((item) => item.team !== player.team).concat(reordered);
+    });
+  }
+
+  function removePlayer(userId: string) {
+    setPlayers((list) => list.filter((player) => player.userId !== userId));
+  }
+
+  function balanceTeamsByPosition() {
+    setPlayers((list) => {
+      const ordered = [...list].sort((left, right) => {
+        const groupDiff = positionBalanceRank[positionBalanceGroup(left.position)] - positionBalanceRank[positionBalanceGroup(right.position)];
+        if (groupDiff !== 0) return groupDiff;
+        return left.name.localeCompare(right.name, 'pt-BR');
+      });
+      const teams: Record<'A' | 'B', MatchDraftPlayer[]> = { A: [], B: [] };
+      const counts: Record<'A' | 'B', Record<PositionBalanceGroup, number>> = { A: { GO: 0, DEFESA: 0, MEIO: 0, ATAQUE: 0 }, B: { GO: 0, DEFESA: 0, MEIO: 0, ATAQUE: 0 } };
+      for (const player of ordered) {
+        const group = positionBalanceGroup(player.position);
+        const target = counts.A[group] < counts.B[group] ? 'A' : counts.B[group] < counts.A[group] ? 'B' : teams.A.length <= teams.B.length ? 'A' : 'B';
+        teams[target].push({ ...player, team: target });
+        counts[target][group] += 1;
+      }
+      let drawOrder = 1;
+      return (['A', 'B'] as const).flatMap((team) => {
+        let goalkeepers = 0;
+        let linePlayers = 0;
+        return teams[team].map((player) => {
+          const goalkeeper = player.position === 'GO' && goalkeepers === 0;
+          const roleInMatch: MatchDraftPlayer['roleInMatch'] = goalkeeper ? 'GOLEIRO' : 'LINHA';
+          if (goalkeeper) goalkeepers += 1;
+          const startsOnBench = roleInMatch === 'LINHA' && linePlayers >= 6;
+          if (roleInMatch === 'LINHA') linePlayers += 1;
+          return { ...player, roleInMatch, startsOnBench, drawOrder: String(drawOrder++) };
+        });
+      });
+    });
+  }
+
+  async function save() {
+    setMessage('Salvando escalação no banco...');
+    await api.request(`/matches/${match.id}/lineup`, { method: 'PATCH', body: JSON.stringify({ matchDate: date, title, refereeName: refereeName || null, teamAName, teamBName, players: payload() }) });
+    setMessage('Escalação salva e roteiro de trocas recalculado.');
+    await onSaved();
+  }
+
+  function TeamRows({ team, rows }: { team: 'A' | 'B'; rows: MatchDraftPlayer[] }) {
+    return <div className="team-list"><strong>{team === 'A' ? teamAName : teamBName}</strong>{rows.length === 0 ? <small className="muted">Sem atletas no time.</small> : rows.map((player, index) => <div className="team-player compact-line" key={player.userId}><span className="drag-handle">{index + 1}</span><div className="player-meta"><b>{player.name}</b><small>{positionLabel(player.position)}</small></div><select value={player.roleInMatch} onChange={(event) => updatePlayer(player.userId, { roleInMatch: event.target.value as MatchDraftPlayer['roleInMatch'] })}><option value="LINHA">Linha</option><option value="GOLEIRO">Goleiro</option></select><label className="bench"><input type="checkbox" checked={player.startsOnBench} onChange={(event) => updatePlayer(player.userId, { startsOnBench: event.target.checked })} /> Banco</label><button type="button" className="ghost" onClick={() => movePlayer(player.userId, -1)}>↑</button><button type="button" className="ghost" onClick={() => movePlayer(player.userId, 1)}>↓</button><button type="button" className="ghost" onClick={() => updatePlayer(player.userId, { team: team === 'A' ? 'B' : 'A' })}>Mover</button><button type="button" className="ghost" onClick={() => removePlayer(player.userId)}>Remover</button></div>)}</div>;
+  }
+
+  return <div className="score-editor"><div className="card-head"><strong>Escalação editável</strong><button className="ghost" onClick={() => setOpen((value) => !value)}>{open ? 'Recolher' : 'Editar escalação'}</button></div>{open && <><p className="muted">Edite antes da confirmação final. Se já houver eventos oficiais, o backend bloqueia remoções incompatíveis.</p><div className="match-meta"><input value={title} onChange={(event) => setTitle(event.target.value)} /><input type="date" value={date} onChange={(event) => setDate(event.target.value)} /><input value={refereeName} onChange={(event) => setRefereeName(event.target.value)} placeholder="Árbitro" /><input value={teamAName} onChange={(event) => setTeamAName(event.target.value)} /><input value={teamBName} onChange={(event) => setTeamBName(event.target.value)} /><button className="primary" onClick={balanceTeamsByPosition}>Rebalancear</button><button className="primary" onClick={() => void save()}>Salvar escalação</button></div><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar atleta para adicionar" />{query.trim().length > 0 && query.trim().length < 3 && <small className="muted">Digite pelo menos 3 caracteres.</small>}<div className="search-results">{searchResults.map((user) => <article key={user.id}><strong>{user.name}</strong><small>{user.email} • {positionLabel(user.position)}</small><div className="actions"><button className="primary small" onClick={() => addPlayer(user, 'A')}>Time A</button><button className="primary small" onClick={() => addPlayer(user, 'B')}>Time B</button><button className="ghost" onClick={() => addPlayer(user, 'PRESENTE_SEM_JOGAR')}>Presente</button></div></article>)}</div><div className="team-board"><TeamRows team="A" rows={teamA} /><TeamRows team="B" rows={teamB} /></div><div className="team-list"><strong>Presentes sem jogar</strong>{presentOnly.length === 0 ? <small className="muted">Nenhum atleta marcado apenas como presente.</small> : presentOnly.map((player) => <div className="team-player compact-line" key={player.userId}><div className="player-meta"><b>{player.name}</b><small>{positionLabel(player.position)}</small></div><button className="ghost" onClick={() => updatePlayer(player.userId, { team: 'A', roleInMatch: player.position === 'GO' ? 'GOLEIRO' : 'LINHA' })}>Time A</button><button className="ghost" onClick={() => updatePlayer(player.userId, { team: 'B', roleInMatch: player.position === 'GO' ? 'GOLEIRO' : 'LINHA' })}>Time B</button><button className="ghost" onClick={() => removePlayer(player.userId)}>Remover</button></div>)}</div>{message && <p className="muted">{message}</p>}</>}</div>;
 }
 
 function SubstitutionManager({ rotation, currentMinute }: { rotation: MatchDetail['rotation']; currentMinute: number }) {
@@ -518,7 +665,6 @@ function MatchScoreEditor({ api, match, users, clockSeconds, clockRunning, onSav
   const [relatedUserId, setRelatedUserId] = useState('');
   const [eventType, setEventType] = useState<MatchEventDraft['eventType']>('GOL');
   const [minute, setMinute] = useState(0);
-  const [team, setTeam] = useState<'A' | 'B'>('A');
   const [correctionReason, setCorrectionReason] = useState('');
   const [autosaveStatus, setAutosaveStatus] = useState(match.draftSavedAt ? `Rascunho recuperado de ${formatBrasiliaTime(match.draftSavedAt)}.` : 'Rascunho pronto para autosave.');
   const clockRef = useRef({ clockSeconds, clockRunning });
@@ -567,7 +713,11 @@ function MatchScoreEditor({ api, match, users, clockSeconds, clockRunning, onSav
     await onSaved();
   }
 
-  return <div className="score-editor"><strong>{match.status === 'CONFIRMED' ? 'Correção auditada da súmula' : 'Fechamento da súmula'}</strong>{match.status !== 'CONFIRMED' && <p className="muted">{autosaveStatus}</p>}<div className="score-inputs"><input type="number" min="0" value={teamAScore} onChange={(event) => setTeamAScore(Number(event.target.value))} /><span>x</span><input type="number" min="0" value={teamBScore} onChange={(event) => setTeamBScore(Number(event.target.value))} /></div>{match.status === 'CONFIRMED' && <input value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} placeholder="Motivo da correção: gol/assistência/cartão lançado errado" required minLength={5} />}<div className="event-form"><select value={eventType} onChange={(event) => setEventType(event.target.value as MatchEventDraft['eventType'])}><option value="GOL">Gol</option><option value="GOL_CONTRA">Gol contra</option><option value="ASSISTENCIA">Assistência</option><option value="CARTAO_AMARELO">Cartão amarelo</option><option value="CARTAO_VERMELHO">Cartão vermelho</option><option value="CARTAO_AZUL">Cartão azul</option></select><select value={userId} onChange={(event) => setUserId(event.target.value)}>{match.players.map((player) => <option key={player.userId} value={player.userId}>{player.name}</option>)}</select><select value={relatedUserId} onChange={(event) => setRelatedUserId(event.target.value)}><option value="">Sem relacionado</option>{match.players.map((player) => <option key={player.userId} value={player.userId}>{player.name}</option>)}</select><input type="number" min="0" max="180" value={minute} onChange={(event) => setMinute(Number(event.target.value))} /><select value={team} onChange={(event) => setTeam(event.target.value as 'A' | 'B')}><option value="A">Time A</option><option value="B">Time B</option></select><button type="button" className="ghost" onClick={addEvent}>Adicionar</button></div><div className="chips">{events.map((item, index) => <button className="chip" key={`${item.userId}-${item.eventType}-${index}`} onClick={() => setEvents((list) => list.filter((_, itemIndex) => itemIndex !== index))}>{item.minute}' {eventLabel(item.eventType)}</button>)}</div><div className="actions"><button className="primary" onClick={submit} disabled={match.status === 'CONFIRMED' && correctionReason.trim().length < 5}>{match.status === 'CONFIRMED' ? 'Salvar correção' : 'Submeter'}</button>{match.status === 'SUBMITTED' && <button className="ghost" onClick={confirm}>Confirmar e pontuar</button>}</div></div>;
+  const selectedEventPlayer = match.players.find((player) => player.userId === userId);
+  const playablePlayers = match.players.filter((player) => player.team !== 'PRESENTE_SEM_JOGAR');
+  const relatedPlayers = playablePlayers.filter((player) => player.userId !== userId && player.team === selectedEventPlayer?.team);
+
+  return <div className="score-editor"><strong>{match.status === 'CONFIRMED' ? 'Correção auditada da súmula' : 'Fechamento da súmula'}</strong>{match.status !== 'CONFIRMED' && <p className="muted">{autosaveStatus}</p>}<div className="score-inputs"><input type="number" min="0" value={teamAScore} onChange={(event) => setTeamAScore(Number(event.target.value))} /><span>x</span><input type="number" min="0" value={teamBScore} onChange={(event) => setTeamBScore(Number(event.target.value))} /></div>{match.status === 'CONFIRMED' && <input value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} placeholder="Motivo da correção: gol/assistência/cartão lançado errado" required minLength={5} />}<div className="event-form"><select value={eventType} onChange={(event) => setEventType(event.target.value as MatchEventDraft['eventType'])}><option value="GOL">Gol</option><option value="GOL_CONTRA">Gol contra</option><option value="ASSISTENCIA">Assistência</option><option value="CARTAO_AMARELO">Cartão amarelo</option><option value="CARTAO_VERMELHO">Cartão vermelho</option><option value="CARTAO_AZUL">Cartão azul</option></select><select value={userId} onChange={(event) => { setUserId(event.target.value); setRelatedUserId(''); }}>{playablePlayers.map((player) => <option key={player.userId} value={player.userId}>{player.name} • Time {player.team}</option>)}</select><select value={relatedUserId} onChange={(event) => setRelatedUserId(event.target.value)}><option value="">Sem relacionado</option>{relatedPlayers.map((player) => <option key={player.userId} value={player.userId}>{player.name}</option>)}</select><input type="number" min="0" max="180" value={minute} onChange={(event) => setMinute(Number(event.target.value))} /><span className="status open">Time {selectedEventPlayer?.team ?? '—'}</span><button type="button" className="ghost" onClick={addEvent}>Adicionar</button></div><div className="chips">{events.map((item, index) => <button className="chip" key={`${item.userId}-${item.eventType}-${index}`} onClick={() => setEvents((list) => list.filter((_, itemIndex) => itemIndex !== index))}>{item.minute}' {eventLabel(item.eventType)}</button>)}</div><div className="actions"><button className="primary" onClick={submit} disabled={match.status === 'CONFIRMED' && correctionReason.trim().length < 5}>{match.status === 'CONFIRMED' ? 'Salvar correção' : 'Submeter'}</button>{match.status === 'SUBMITTED' && <button className="ghost" onClick={confirm}>Confirmar e pontuar</button>}</div></div>;
 }
 
 function CorrectionHistory({ corrections }: { corrections: MatchCorrection[] }) {
@@ -577,8 +727,11 @@ function CorrectionHistory({ corrections }: { corrections: MatchCorrection[] }) 
 
 function OperationalMatchDialog({ api, users, activeSeasonId, onDone }: { api: ApiClient; users: User[]; activeSeasonId: string; onDone: () => Promise<void> }) {
   const [open, setOpen] = useState(false);
+  const [draftMatchId, setDraftMatchId] = useState('');
+  const [saveStatus, setSaveStatus] = useState('');
   const [title, setTitle] = useState('Futebol de quarta');
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [refereeName, setRefereeName] = useState('');
   const [teamAName, setTeamAName] = useState('Time A');
   const [teamBName, setTeamBName] = useState('Time B');
   const [query, setQuery] = useState('');
@@ -591,6 +744,44 @@ function OperationalMatchDialog({ api, users, activeSeasonId, onDone }: { api: A
   const teamA = players.filter((player) => player.team === 'A');
   const teamB = players.filter((player) => player.team === 'B');
   const presentOnly = players.filter((player) => player.team === 'PRESENTE_SEM_JOGAR');
+
+  function selectedPlayersPayload(list = players) {
+    const currentTeamA = list.filter((player) => player.team === 'A');
+    const currentTeamB = list.filter((player) => player.team === 'B');
+    return list.map((player) => ({
+      userId: player.userId,
+      team: player.team,
+      roleInMatch: player.team === 'PRESENTE_SEM_JOGAR' ? 'PRESENTE_SEM_JOGAR' : player.roleInMatch,
+      drawOrder: player.drawOrder ? Number(player.drawOrder) : null,
+      rotationOrder: player.team === 'A' ? currentTeamA.findIndex((item) => item.userId === player.userId) + 1 : player.team === 'B' ? currentTeamB.findIndex((item) => item.userId === player.userId) + 1 : null,
+      startsOnBench: player.startsOnBench,
+      present: true
+    }));
+  }
+
+  async function saveLineup() {
+    if (!draftMatchId) return;
+    await api.request(`/matches/${draftMatchId}/lineup`, { method: 'PATCH', body: JSON.stringify({ matchDate: date, title, refereeName: refereeName || null, teamAName, teamBName, players: selectedPlayersPayload() }) });
+  }
+
+  async function openPersistentDraft() {
+    const created = await api.request<{ id: string }>('/matches', { method: 'POST', body: JSON.stringify({ seasonId: activeSeasonId || null, matchDate: date, title, refereeName: refereeName || null, teamAName, teamBName, players: [] }) });
+    setDraftMatchId(created.id);
+    setSaveStatus('Rascunho da súmula criado e salvo no banco.');
+    setOpen(true);
+    await onDone();
+  }
+
+  useEffect(() => {
+    if (!open || !draftMatchId) return;
+    setSaveStatus('Salvando escalação...');
+    const timer = window.setTimeout(() => {
+      void saveLineup()
+        .then(() => setSaveStatus('Escalação salva no banco.'))
+        .catch((err) => setSaveStatus(err instanceof Error ? err.message : 'Falha ao salvar escalação.'));
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [open, draftMatchId, title, date, refereeName, teamAName, teamBName, players]);
 
   function addPlayer(user: User, team: MatchDraftPlayer['team']) {
     const position = user.position ?? 'MC';
@@ -657,17 +848,9 @@ function OperationalMatchDialog({ api, users, activeSeasonId, onDone }: { api: A
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    const selected = players.map((player) => ({
-      userId: player.userId,
-      team: player.team,
-      roleInMatch: player.team === 'PRESENTE_SEM_JOGAR' ? 'PRESENTE_SEM_JOGAR' : player.roleInMatch,
-      drawOrder: player.drawOrder ? Number(player.drawOrder) : null,
-      rotationOrder: player.team === 'A' ? teamA.findIndex((item) => item.userId === player.userId) + 1 : player.team === 'B' ? teamB.findIndex((item) => item.userId === player.userId) + 1 : null,
-      startsOnBench: player.startsOnBench,
-      present: true
-    }));
-    await api.request('/matches', { method: 'POST', body: JSON.stringify({ seasonId: activeSeasonId || null, matchDate: date, title, teamAName, teamBName, players: selected }) });
+    await saveLineup();
     setOpen(false);
+    setDraftMatchId('');
     setPlayers([]);
     await onDone();
   }
@@ -676,17 +859,20 @@ function OperationalMatchDialog({ api, users, activeSeasonId, onDone }: { api: A
     return <div className="team-list"><strong>{team === 'A' ? teamAName : teamBName} • sequência de troca</strong>{rows.length === 0 ? <small className="muted">Busque atleta e clique em {team === 'A' ? 'Time A' : 'Time B'}.</small> : rows.map((player, index) => <div className="team-player" key={player.userId} draggable onDragStart={() => setDraggedUserId(player.userId)} onDragOver={(event) => event.preventDefault()} onDrop={() => movePlayer(draggedUserId, player.userId, team)}><span className="drag-handle">↕ {index + 1}</span><div className="player-meta"><b>{player.name}</b><small>{positionLabel(player.position)}</small></div><select value={player.roleInMatch} onChange={(event) => updatePlayer(player.userId, { roleInMatch: event.target.value as MatchDraftPlayer['roleInMatch'] })}><option value="LINHA">Linha</option><option value="GOLEIRO">Goleiro</option></select><label className="bench"><input type="checkbox" checked={player.startsOnBench} onChange={(event) => updatePlayer(player.userId, { startsOnBench: event.target.checked })} /> Banco</label><button type="button" className="ghost" onClick={() => removePlayer(player.userId)}>Remover</button></div>)}</div>;
   }
 
-  return <><button className="primary small" onClick={() => setOpen(true)}>Nova</button>{open && <div className="modal"><form className="card modal-card wide" onSubmit={submit}><div className="card-head"><h2>Nova súmula</h2><button type="button" className="ghost" onClick={() => setOpen(false)}>Fechar</button></div><div className="match-meta"><input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Título" /><input type="date" value={date} onChange={(event) => setDate(event.target.value)} /><input value={teamAName} onChange={(event) => setTeamAName(event.target.value)} /><input value={teamBName} onChange={(event) => setTeamBName(event.target.value)} /><button type="button" className="primary" onClick={balanceTeamsByPosition} disabled={players.length < 2}>Balancear por posições</button></div><div className="team-builder"><section><h2>Buscar atleta</h2><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite 3 letras do nome ou e-mail" />{query.trim().length > 0 && query.trim().length < 3 && <p className="muted">Digite pelo menos 3 caracteres.</p>}<div className="search-results">{searchResults.map((user) => <article key={user.id}><strong>{user.name}</strong><small>{user.email} • {positionLabel(user.position)}</small><div className="actions"><button type="button" className="primary small" onClick={() => addPlayer(user, 'A')}>Time A</button><button type="button" className="primary small" onClick={() => addPlayer(user, 'B')}>Time B</button><button type="button" className="ghost" onClick={() => addPlayer(user, 'PRESENTE_SEM_JOGAR')}>Presente</button></div></article>)}</div><div className="team-list"><div className="card-head"><strong>Presentes para divisão</strong><button type="button" className="ghost" onClick={balanceTeamsByPosition} disabled={players.length < 2}>Dividir agora</button></div>{presentOnly.length === 0 ? <small className="muted">Marque atletas como presente e use o balanceamento automático; quem ficar aqui ao criar súmula entra como presente sem jogar.</small> : presentOnly.map((player) => <div className="team-player compact-line" key={player.userId}><div className="player-meta"><b>{player.name}</b><small>{positionLabel(player.position)}</small></div><button type="button" className="ghost" onClick={() => removePlayer(player.userId)}>Remover</button></div>)}</div></section><section className="team-board"><TeamList team="A" rows={teamA} /><TeamList team="B" rows={teamB} /></section></div><button className="primary" disabled={!teamA.length || !teamB.length}>Criar súmula</button></form></div>}</>;
+  return <><button className="primary small" onClick={() => void openPersistentDraft()}>Nova</button>{open && <div className="modal"><form className="card modal-card wide" onSubmit={submit}><div className="card-head"><h2>Nova súmula</h2><button type="button" className="ghost" onClick={() => setOpen(false)}>Fechar</button></div>{saveStatus && <p className="muted">{saveStatus}</p>}<div className="match-meta"><input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Título" /><input type="date" value={date} onChange={(event) => setDate(event.target.value)} /><input value={refereeName} onChange={(event) => setRefereeName(event.target.value)} placeholder="Árbitro" /><input value={teamAName} onChange={(event) => setTeamAName(event.target.value)} /><input value={teamBName} onChange={(event) => setTeamBName(event.target.value)} /><button type="button" className="primary" onClick={balanceTeamsByPosition} disabled={players.length < 2}>Balancear por posições</button></div><div className="team-builder"><section><h2>Buscar atleta</h2><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite 3 letras do nome ou e-mail" />{query.trim().length > 0 && query.trim().length < 3 && <p className="muted">Digite pelo menos 3 caracteres.</p>}<div className="search-results">{searchResults.map((user) => <article key={user.id}><strong>{user.name}</strong><small>{user.email} • {positionLabel(user.position)}</small><div className="actions"><button type="button" className="primary small" onClick={() => addPlayer(user, 'A')}>Time A</button><button type="button" className="primary small" onClick={() => addPlayer(user, 'B')}>Time B</button><button type="button" className="ghost" onClick={() => addPlayer(user, 'PRESENTE_SEM_JOGAR')}>Presente</button></div></article>)}</div><div className="team-list"><div className="card-head"><strong>Presentes para divisão</strong><button type="button" className="ghost" onClick={balanceTeamsByPosition} disabled={players.length < 2}>Dividir agora</button></div>{presentOnly.length === 0 ? <small className="muted">Marque atletas como presente e use o balanceamento automático; quem ficar aqui ao salvar súmula entra como presente sem jogar.</small> : presentOnly.map((player) => <div className="team-player compact-line" key={player.userId}><div className="player-meta"><b>{player.name}</b><small>{positionLabel(player.position)}</small></div><button type="button" className="ghost" onClick={() => removePlayer(player.userId)}>Remover</button></div>)}</div></section><section className="team-board"><TeamList team="A" rows={teamA} /><TeamList team="B" rows={teamB} /></section></div><button className="primary" disabled={!teamA.length || !teamB.length}>Salvar súmula</button></form></div>}</>;
 }
 
 function PaymentsPanel({ api, canCoordinate, users, activeSeasonId }: { api: ApiClient; canCoordinate: boolean; users: User[]; activeSeasonId: string }) {
   const [userId, setUserId] = useState(users[0]?.id ?? '');
   const [amount, setAmount] = useState('0');
+  const [bulkAmount, setBulkAmount] = useState('0');
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7) + '-01');
   const [dueDate, setDueDate] = useState(new Date().toISOString().slice(0, 10));
   const [paidAt, setPaidAt] = useState(new Date().toISOString().slice(0, 10));
   const [status, setStatus] = useState<PaymentRecord['status']>('PAID');
+  const [notes, setNotes] = useState('');
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
+  const [summary, setSummary] = useState<PaymentSummary | null>(null);
   const [message, setMessage] = useState('');
 
   useEffect(() => {
@@ -696,6 +882,7 @@ function PaymentsPanel({ api, canCoordinate, users, activeSeasonId }: { api: Api
   async function loadPayments() {
     const path = canCoordinate ? `/payments${activeSeasonId ? `?seasonId=${activeSeasonId}` : ''}` : '/payments/me';
     setPayments(await api.request<PaymentRecord[]>(path));
+    if (canCoordinate) setSummary(await api.request<PaymentSummary>(`/payments/summary${activeSeasonId ? `?seasonId=${activeSeasonId}` : ''}`));
   }
 
   useEffect(() => {
@@ -703,12 +890,39 @@ function PaymentsPanel({ api, canCoordinate, users, activeSeasonId }: { api: Api
   }, [activeSeasonId, canCoordinate]);
 
   async function save() {
-    const saved = await api.request<PaymentRecord>('/payments', { method: 'PUT', body: JSON.stringify({ userId, seasonId: activeSeasonId || null, referenceMonth: month, dueDate, amountCents: Math.round(Number(amount) * 100), status, paidAt: status === 'PAID' ? new Date(`${paidAt}T12:00:00`).toISOString() : null }) });
+    const saved = await api.request<PaymentRecord>('/payments', { method: 'PUT', body: JSON.stringify({ userId, seasonId: activeSeasonId || null, referenceMonth: month, dueDate, amountCents: Math.round(Number(amount) * 100), status, paidAt: status === 'PAID' ? new Date(`${paidAt}T12:00:00`).toISOString() : null, notes: notes || null }) });
     setMessage(saved.earnsPoint ? 'Pagamento antecipado registrado: +1 ponto na temporada.' : 'Mensalidade registrada sem ponto antecipado.');
     await loadPayments();
   }
 
-  return <section className="card compact"><h2>Mensalidades</h2>{canCoordinate ? <div className="inline-form"><select value={userId} onChange={(event) => setUserId(event.target.value)}>{users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}</select><input type="month" value={month.slice(0, 7)} onChange={(event) => setMonth(`${event.target.value}-01`)} /><input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} title="Data de vencimento" /><input type="date" value={paidAt} onChange={(event) => setPaidAt(event.target.value)} title="Data de pagamento" /><input value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="Valor" /><select value={status} onChange={(event) => setStatus(event.target.value as PaymentRecord['status'])}><option value="PAID">Pago</option><option value="PENDING">Pendente</option><option value="LATE">Atrasado</option><option value="WAIVED">Isento</option></select><button className="primary" onClick={save}>Salvar</button></div> : <p className="muted">Você visualiza apenas sua mensalidade e se ela gerou ponto por pagamento antecipado.</p>}{message && <p className="muted">{message}</p>}<div className="table-cards">{payments.map((payment) => <article className="row-card" key={`${payment.userId ?? 'me'}-${payment.referenceMonth}`}><strong>{payment.userName ?? 'Minha mensalidade'} • {payment.referenceMonth.slice(0, 7)}</strong><span>{payment.earnsPoint ? '+1 pt' : payment.status}</span><small>Venc. {payment.dueDate?.slice(0, 10)} • Pago {payment.paidAt ? payment.paidAt.slice(0, 10) : 'não informado'} • R$ {(payment.amountCents / 100).toFixed(2)}</small></article>)}</div></section>;
+  async function generateMonth() {
+    const result = await api.request<{ generated: number }>('/payments/generate-month', { method: 'POST', body: JSON.stringify({ seasonId: activeSeasonId || null, referenceMonth: month, dueDate, amountCents: Math.round(Number(bulkAmount || amount) * 100), notes: notes || null }) });
+    setMessage(`${result.generated} cobrança(s) criada(s)/atualizada(s) para atletas ativos. Pagamentos já quitados foram preservados.`);
+    await loadPayments();
+  }
+
+  return <section className="card compact"><div className="card-head"><h2>Mensalidades</h2>{canCoordinate && <button className="ghost" onClick={() => downloadCsv('poka-pratika-mensalidades.csv', payments.map((payment) => ({ atleta: payment.userName ?? 'Minha mensalidade', mes: payment.referenceMonth.slice(0, 7), vencimento: payment.dueDate?.slice(0, 10), pagoEm: payment.paidAt ? payment.paidAt.slice(0, 10) : '', valor: (payment.amountCents / 100).toFixed(2), status: payment.status, pontoAntecipado: payment.earnsPoint, observacao: payment.notes ?? '' })))}>Exportar CSV</button>}</div>{canCoordinate && summary && <div className="stat-grid"><span><b>R$ {(summary.paidCents / 100).toFixed(2)}</b> recebido</span><span><b>R$ {(summary.openCents / 100).toFixed(2)}</b> aberto</span><span><b>{summary.pending}</b> pendente(s)</span><span><b>{summary.late}</b> atraso(s)</span><span><b>{summary.earlyPoints}</b> ponto(s) antecipados</span></div>}{canCoordinate ? <><div className="inline-form"><input type="month" value={month.slice(0, 7)} onChange={(event) => setMonth(`${event.target.value}-01`)} /><input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} title="Data de vencimento" /><input value={bulkAmount} onChange={(event) => setBulkAmount(event.target.value)} placeholder="Valor lote" /><input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Observação" /><button className="primary" onClick={generateMonth}>Gerar mês para atletas ativos</button></div><div className="inline-form"><select value={userId} onChange={(event) => setUserId(event.target.value)}>{users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}</select><input type="date" value={paidAt} onChange={(event) => setPaidAt(event.target.value)} title="Data de pagamento" /><input value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="Valor individual" /><select value={status} onChange={(event) => setStatus(event.target.value as PaymentRecord['status'])}><option value="PAID">Pago</option><option value="PENDING">Pendente</option><option value="LATE">Atrasado</option><option value="WAIVED">Isento</option></select><button className="primary" onClick={save}>Salvar individual</button></div></> : <p className="muted">Você visualiza apenas sua mensalidade e se ela gerou ponto por pagamento antecipado.</p>}{message && <p className="muted">{message}</p>}<div className="table-cards">{payments.map((payment) => <article className="row-card" key={`${payment.userId ?? 'me'}-${payment.referenceMonth}`}><strong>{payment.userName ?? 'Minha mensalidade'} • {payment.referenceMonth.slice(0, 7)}</strong><span>{payment.earnsPoint ? '+1 pt' : payment.status}</span><small>Venc. {payment.dueDate?.slice(0, 10)} • Pago {payment.paidAt ? payment.paidAt.slice(0, 10) : 'não informado'} • R$ {(payment.amountCents / 100).toFixed(2)}</small>{payment.notes && <small>{payment.notes}</small>}</article>)}</div></section>;
+}
+
+function AwardSettingsCard({ api }: { api: ApiClient }) {
+  const [categories, setCategories] = useState<AwardSetting[]>([]);
+  const [message, setMessage] = useState('');
+
+  async function loadSettings() {
+    setCategories(await api.request<AwardSetting[]>('/settings/awards'));
+  }
+
+  useEffect(() => {
+    void loadSettings().catch((err) => setMessage(err instanceof Error ? err.message : 'Falha ao carregar configuração de prêmios.'));
+  }, []);
+
+  async function save() {
+    const updated = await api.request<AwardSetting[]>('/settings/awards', { method: 'PUT', body: JSON.stringify({ categories: categories.map(({ code, label, votingEnabled }) => ({ code, label, votingEnabled })) }) });
+    setCategories(updated);
+    setMessage('Categorias de premiação salvas. A próxima votação já usa essa configuração.');
+  }
+
+  return <section className="card compact"><div className="card-head"><h2>Configuração de prêmios</h2><button className="primary small" onClick={save}>Salvar categorias</button></div><p className="muted">ADMIN define nomes e quais categorias entram na votação. Prêmios automáticos de ranking continuam calculados pela temporada.</p>{message && <p className="muted">{message}</p>}<div className="table-cards">{categories.map((item) => <article className="row-card" key={item.code}><strong>{item.code}</strong><input value={item.label} onChange={(event) => setCategories((list) => list.map((current) => current.code === item.code ? { ...current, label: event.target.value } : current))} /><label className="bench"><input type="checkbox" checked={item.votingEnabled} onChange={(event) => setCategories((list) => list.map((current) => current.code === item.code ? { ...current, votingEnabled: event.target.checked } : current))} /> Entra na votação</label><small>{item.adminOnly ? 'Resultado restrito ao ADMIN.' : 'Categoria operacional/automática.'}</small></article>)}</div></section>;
 }
 
 function AwardsPanel({ api, users, activeSeason, isAdmin }: { api: ApiClient; users: User[]; activeSeason?: Season; isAdmin: boolean }) {
@@ -905,20 +1119,43 @@ function AdminPanel({ api, users, seasons, points, activeSeasonId, onReload, isA
 }
 
 function UserAdminRow({ api, user, isAdmin, onReload }: { api: ApiClient; user: User; isAdmin: boolean; onReload: () => Promise<void> }) {
+  const [name, setName] = useState(user.name);
+  const [email, setEmail] = useState(user.email);
   const [role, setRole] = useState<User['role']>(user.role);
   const [position, setPosition] = useState<AthletePosition>(user.position ?? 'MC');
   const [active, setActive] = useState(user.active !== false);
+  const [password, setPassword] = useState('');
+  const [message, setMessage] = useState('');
 
   useEffect(() => {
+    setName(user.name);
+    setEmail(user.email);
     setRole(user.role);
     setPosition(user.position ?? 'MC');
     setActive(user.active !== false);
-  }, [user.id, user.role, user.position, user.active]);
+    setPassword('');
+  }, [user.id, user.name, user.email, user.role, user.position, user.active]);
 
   async function save() {
-    await api.request(`/users/${user.id}`, { method: 'PATCH', body: JSON.stringify({ role, position, active }) });
+    await api.request(`/users/${user.id}`, { method: 'PATCH', body: JSON.stringify({ name, email, role, position, active }) });
+    setMessage('Usuário atualizado.');
     await onReload();
   }
 
-  return <article className="row-card"><strong>{user.name}</strong><span>{active ? 'ativo' : 'inativo'}</span><small>{user.email}</small>{isAdmin ? <div className="inline-form"><select value={role} onChange={(event) => setRole(event.target.value as User['role'])}><option>ATLETA</option><option>COORDENADOR</option><option>ADMIN</option></select><select value={position} onChange={(event) => setPosition(event.target.value as AthletePosition)}>{athletePositionOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select><select value={active ? 'true' : 'false'} onChange={(event) => setActive(event.target.value === 'true')}><option value="true">Ativo</option><option value="false">Inativo</option></select><button className="ghost" onClick={save}>Salvar</button></div> : <small>{user.role} • {positionLabel(user.position)}</small>}</article>;
+  async function sendActivation() {
+    const result = await api.request<{ activationEmailSent: boolean }>(`/users/${user.id}/send-activation`, { method: 'POST' });
+    setMessage(result.activationEmailSent ? 'Convite enviado por e-mail.' : 'Convite gerado; Graph não confirmou envio. Use recuperação de senha se necessário.');
+  }
+
+  async function changePassword() {
+    if (password.length < 8) {
+      setMessage('A senha precisa ter pelo menos 8 caracteres.');
+      return;
+    }
+    await api.request(`/users/${user.id}/password`, { method: 'POST', body: JSON.stringify({ password }) });
+    setPassword('');
+    setMessage('Senha redefinida pelo ADMIN.');
+  }
+
+  return <article className="row-card"><strong>{user.name}</strong><span>{active ? 'ativo' : 'inativo'}</span><small>{user.email}</small>{isAdmin ? <div className="inline-form"><input value={name} onChange={(event) => setName(event.target.value)} placeholder="Nome" /><input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="E-mail" type="email" /><select value={role} onChange={(event) => setRole(event.target.value as User['role'])}><option>ATLETA</option><option>COORDENADOR</option><option>ADMIN</option></select><select value={position} onChange={(event) => setPosition(event.target.value as AthletePosition)}>{athletePositionOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select><select value={active ? 'true' : 'false'} onChange={(event) => setActive(event.target.value === 'true')}><option value="true">Ativo</option><option value="false">Inativo</option></select><button className="ghost" onClick={save}>Salvar</button><input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Nova senha" type="password" minLength={8} /><button className="ghost" onClick={changePassword}>Redefinir senha</button><button className="ghost" onClick={sendActivation}>Reenviar convite</button></div> : <small>{user.role} • {positionLabel(user.position)}</small>}{message && <small className="muted">{message}</small>}</article>;
 }

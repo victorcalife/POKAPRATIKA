@@ -3,6 +3,7 @@ import express, { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import { env } from './config/env';
+import { query } from './db/pool';
 import { authRouter } from './routes/auth.routes';
 import { awardsRouter } from './routes/awards.routes';
 import { matchesRouter } from './routes/matches.routes';
@@ -34,6 +35,15 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'pokapratika-backend' });
 });
 
+app.get('/ready', async (_req, res, next) => {
+  try {
+    await query('SELECT 1');
+    res.json({ ok: true, service: 'pokapratika-backend', database: 'ready' });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.use('/auth', authRouter);
 app.use('/users', usersRouter);
 app.use('/settings', settingsRouter);
@@ -50,6 +60,8 @@ app.use((_req, _res, next) => {
 });
 
 app.use((error: ApiError, _req: Request, res: Response, _next: NextFunction) => {
-  const status = error.status && error.status >= 400 && error.status < 600 ? error.status : 500;
-  res.status(status).json({ message: status === 500 ? 'Erro interno do servidor.' : error.message });
+  const conflictCode = (error as ApiError & { code?: string }).code === '23505';
+  const status = conflictCode ? 409 : error.status && error.status >= 400 && error.status < 600 ? error.status : 500;
+  const message = conflictCode ? 'Registro duplicado. Verifique dados únicos como e-mail.' : status === 500 ? 'Erro interno do servidor.' : error.message;
+  res.status(status).json({ message });
 });

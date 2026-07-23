@@ -26,6 +26,9 @@ awardsRouter.post('/vote', asyncHandler(async (req: AuthRequest, res) => {
   const category = await query('SELECT code FROM award_categories WHERE code = $1 AND voting_enabled = TRUE', [body.categoryCode]);
   if (!category.rowCount) throw httpError(400, 'Categoria de votação inválida.');
 
+  const votedUser = await query('SELECT id FROM users WHERE id = $1 AND active = TRUE', [body.votedUserId]);
+  if (!votedUser.rowCount) throw httpError(400, 'O atleta votado precisa estar ativo.');
+
   const result = await query(
     `INSERT INTO award_votes (season_id, voter_user_id, category_code, voted_user_id)
      VALUES ($1, $2, $3, $4)

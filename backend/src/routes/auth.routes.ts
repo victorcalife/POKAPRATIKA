@@ -46,6 +46,7 @@ authRouter.post('/login', asyncHandler(async (req, res) => {
 
 authRouter.get('/me', requireAuth, asyncHandler(async (req: AuthRequest, res) => {
   const result = await query('SELECT id, name, email, role, position, avatar_data_url AS "avatarDataUrl", active FROM users WHERE id = $1', [req.user?.id]);
+  if (!result.rowCount) throw httpError(404, 'Usuário autenticado não encontrado.');
   res.json(result.rows[0]);
 }));
 
@@ -53,11 +54,12 @@ authRouter.patch('/me', requireAuth, asyncHandler(async (req: AuthRequest, res) 
   const body = validate(profileSchema, req.body);
   const result = await query(
     `UPDATE users
-     SET name = COALESCE($2, name), email = COALESCE($3, email), avatar_data_url = CASE WHEN $4::BOOLEAN THEN $5 ELSE avatar_data_url END, updated_at = now()
+     SET name = COALESCE($2, name), email = COALESCE(lower($3), email), avatar_data_url = CASE WHEN $4::BOOLEAN THEN $5 ELSE avatar_data_url END, updated_at = now()
      WHERE id = $1
      RETURNING id, name, email, role, position, avatar_data_url AS "avatarDataUrl"`,
-    [req.user?.id, body.name, body.email, Object.prototype.hasOwnProperty.call(body, 'avatarDataUrl'), body.avatarDataUrl]
+    [req.user?.id, body.name?.trim(), body.email, Object.prototype.hasOwnProperty.call(body, 'avatarDataUrl'), body.avatarDataUrl]
   );
+  if (!result.rowCount) throw httpError(404, 'Usuário autenticado não encontrado.');
   res.json(result.rows[0]);
 }));
 
