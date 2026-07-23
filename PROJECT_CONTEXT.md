@@ -10,7 +10,7 @@ Foi criada a base full-stack do sistema POKA PRÁTIKA, seguindo o padrão TOIT/R
 - Backend Node.js/TypeScript com Express e PostgreSQL via `pg`, sem ORM.
 - Frontend React/Vite/TypeScript/Tailwind, mobile-first e interface compacta.
 - Frontend em produção usa Nginx com `docker-entrypoint.sh` para gerar `/runtime-config.js` a partir de `VITE_API_URL` no runtime Railway, evitando tela branca quando a variável existe no serviço mas não entrou no build Vite.
-- Identidade visual original criada em `frontend/src/assets/poka-pratika-logo.svg`, com tom cômico de futebol amador/perna de pau, referência a Balneário Camboriú/SC e paleta azul média aplicada ao escudo e aos elementos de destaque do sistema; no símbolo, `POKA` e `PRÁTIKA` usam o mesmo tamanho de fonte, ambos ampliados em 15% sobre o tamanho anterior de `POKA`.
+- Identidade visual original criada em `frontend/src/assets/poka-pratika-logo.svg`, com tom cômico de futebol amador/perna de pau, referência a Balneário Camboriú/SC e paleta azul média aplicada ao escudo e aos elementos de destaque do sistema; no símbolo, `POKA` e `PRÁTIKA` usam o mesmo tamanho de fonte, ambos ampliados em 15% sobre o tamanho anterior de `POKA`, sem a antiga bolinha amarela e com os textos 2px mais baixos.
 - Migrações SQL manuais em `migrations/01_core_schema.sql`, `migrations/02_pagamentos_vencimento_pontuacao.sql`, `migrations/03_saldo_inicial_temporada_excel.sql`, `migrations/04_posicoes_oficiais_atletas.sql`, `migrations/05_sumula_rascunho_operacional_autosave.sql`, `migrations/06_selecao_do_ano_7_votos.sql`, `migrations/07_eventos_gol_contra.sql`, `migrations/08_email_case_insensitive_unico.sql`, `migrations/09_reparo_schema_sumula_operacional.sql` e `migrations/10_correcoes_auditadas_sumula.sql`.
 - Sem criação de `.env` e sem hardcode de credenciais/URLs.
 - Backend valida obrigatoriamente `NODE_ENV=production`, `PORT=8080`, `DATABASE_URL`, `JWT_SECRET`, `ALLOWED_ORIGINS` e `FRONTEND_URL` no startup Railway.
@@ -154,6 +154,7 @@ Foi criada a base full-stack do sistema POKA PRÁTIKA, seguindo o padrão TOIT/R
 - `frontend`: `npm run typecheck` e `npm run build` concluídos com sucesso após integrar jogos na tela da temporada, mover o detalhe da súmula para modal fumê operacional, renderizar lançamento rápido por atleta, ajustar microcopy de criação de jogo e ajustar o logo `POKA PRÁTIKA`.
 - `frontend`: `npm run typecheck` e `npm run build` concluídos com sucesso após migrar mensalidades para dashboard com modais de geração/registro e mover configurações de prêmios para modal fumê.
 - `frontend`: `npm run typecheck` e `npm run build` concluídos com sucesso após reorganizar `config.` em home administrativa com modais para temporada, pontuação, usuário, importação Excel e edição individual de usuários.
+- `frontend`: `npm run typecheck` e `npm run build` concluídos com sucesso após remover a bolinha amarela do logo e baixar `POKA`/`PRÁTIKA` em 2px no SVG.
 - `backend`: `npm run typecheck` e `npm run build` concluídos com sucesso após a reforma final de UI para validar o conjunto full-stack antes da homologação.
 - `backend`: `npm audit --audit-level=moderate` sem vulnerabilidades.
 - `frontend`: `npm audit --audit-level=moderate` sem vulnerabilidades.

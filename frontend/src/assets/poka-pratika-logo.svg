@@ -7,10 +7,6 @@
       <stop offset="0.48" stop-color="#2563EB"/>
       <stop offset="1" stop-color="#071B46"/>
     </linearGradient>
-    <linearGradient id="sun" x1="358" y1="70" x2="434" y2="146" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FFE36E"/>
-      <stop offset="1" stop-color="#FF9F43"/>
-    </linearGradient>
     <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
       <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#000" flood-opacity="0.32"/>
     </filter>
@@ -19,7 +15,6 @@
   <path d="M256 24C339 24 407 54 442 80V236C442 354 362 441 256 488C150 441 70 354 70 236V80C105 54 173 24 256 24Z" fill="url(#shield)" filter="url(#softShadow)"/>
   <path d="M256 48C331 48 390 73 418 94V235C418 337 350 414 256 459C162 414 94 337 94 235V94C122 73 181 48 256 48Z" stroke="white" stroke-opacity="0.72" stroke-width="10"/>
 
-  <circle cx="396" cy="108" r="38" fill="url(#sun)"/>
   <path d="M136 150C176 116 221 104 266 114C296 121 318 134 341 152" stroke="#DBEAFE" stroke-width="10" stroke-linecap="round" opacity="0.85"/>
   <path d="M118 169C167 145 213 143 254 158C290 171 317 193 355 198C376 201 395 197 412 190" stroke="#DBEAFE" stroke-width="8" stroke-linecap="round" opacity="0.52"/>
 
@@ -49,7 +44,7 @@
   <path d="M132 382C173 402 214 412 256 412C298 412 339 402 380 382" stroke="#DBEAFE" stroke-width="10" stroke-linecap="round" opacity="0.84"/>
   <path d="M155 407C188 421 222 428 256 428C290 428 324 421 357 407" stroke="#DBEAFE" stroke-width="7" stroke-linecap="round" opacity="0.5"/>
 
-  <text x="256" y="86" text-anchor="middle" font-family="Arial Black, Impact, sans-serif" font-size="46" fill="#F5FBF7" letter-spacing="1">POKA</text>
-  <text x="256" y="130" text-anchor="middle" font-family="Arial Black, Impact, sans-serif" font-size="46" fill="#F5FBF7" letter-spacing="1">PRÁTIKA</text>
+  <text x="256" y="88" text-anchor="middle" font-family="Arial Black, Impact, sans-serif" font-size="46" fill="#F5FBF7" letter-spacing="1">POKA</text>
+  <text x="256" y="132" text-anchor="middle" font-family="Arial Black, Impact, sans-serif" font-size="46" fill="#F5FBF7" letter-spacing="1">PRÁTIKA</text>
   <text x="256" y="482" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#BFDBFE" letter-spacing="2">BALNEÁRIO CAMBORIÚ • SC</text>
 </svg>
