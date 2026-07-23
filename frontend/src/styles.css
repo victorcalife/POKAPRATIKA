@@ -140,18 +140,51 @@ textarea { width: 100%; min-height: 120px; color: #f5fbf7; background: rgba(255,
 .admin-list { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
 .admin-users { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
 .match-meta { display: grid; grid-template-columns: 1.1fr .7fr .9fr .85fr .85fr auto; gap: 8px; align-items: end; }
+.draw-modal { width: min(1120px, 100%); gap: 10px; padding: 14px; background: linear-gradient(145deg, rgba(7,17,31,.96), rgba(13,34,61,.92)); border-color: rgba(147,197,253,.18); }
+.draw-hero { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px; border-radius: 18px; background: radial-gradient(circle at top left, rgba(59,130,246,.22), rgba(255,255,255,.045) 48%, rgba(255,255,255,.025)); border: 1px solid rgba(147,197,253,.16); }
+.draw-hero h2 { font-size: clamp(1.08rem, 2.4vw, 1.55rem); }
+.draw-hero .muted { max-width: 78ch; }
+.sheet-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+.step-chip { display: grid; place-items: center; min-height: 34px; border-radius: 999px; color: #a9b9af; background: rgba(255,255,255,.055); border: 1px solid rgba(255,255,255,.08); font-size: .75rem; font-weight: 950; }
+.step-chip.active { color: #061631; background: linear-gradient(135deg, #ffe39b, #3b82f6); border-color: rgba(255,227,155,.5); }
+.step-chip.done { color: #d9e8de; background: rgba(59,130,246,.16); border-color: rgba(59,130,246,.26); }
+.status-line { padding: 8px 10px; border-radius: 13px; color: #d9e8de; background: rgba(59,130,246,.1); border: 1px solid rgba(59,130,246,.18); font-size: .78rem; }
+.draw-meta { grid-template-columns: 1.2fr .7fr .9fr .82fr .82fr; padding: 9px; border-radius: 16px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08); }
+.draw-dashboard { display: grid; grid-template-columns: 1.15fr repeat(4, .8fr); gap: 7px; }
+.draw-dashboard article { display: grid; gap: 2px; padding: 9px; border-radius: 15px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.08); }
+.draw-dashboard span { color: #a9b9af; font-size: .7rem; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; }
+.draw-dashboard strong { color: #93c5fd; font-size: 1.35rem; line-height: .95; }
+.draw-dashboard small { color: #d9e8de; font-size: .68rem; }
+.draw-action { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px; border-radius: 17px; background: linear-gradient(135deg, rgba(59,130,246,.18), rgba(255,205,86,.08)); border: 1px solid rgba(147,197,253,.2); }
+.draw-action div { display: grid; gap: 3px; }
+.draw-action small { color: #d9e8de; }
+.draw-button { min-width: 158px; box-shadow: 0 12px 30px rgba(37,99,235,.28); }
 .team-builder { min-height: 0; display: grid; grid-template-columns: .85fr 1.15fr; gap: 8px; overflow: hidden; }
 .team-builder > section { min-height: 0; display: grid; align-content: start; gap: 8px; overflow: auto; }
+.draw-builder { grid-template-columns: .9fr 1.1fr; }
+.draw-pool, .draw-teams { padding: 1px; }
+.draw-search { max-height: 170px; }
 .search-results { display: grid; gap: 6px; max-height: 230px; overflow: auto; }
 .search-results article { display: grid; gap: 5px; padding: 8px; border-radius: 14px; background: rgba(255,255,255,.06); }
 .search-results small { color: #a9b9af; }
 .team-board { grid-template-columns: repeat(2, 1fr); }
 .team-list { min-height: 130px; display: grid; align-content: start; gap: 6px; padding: 8px; border-radius: 16px; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08); }
+.team-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.team-title span, .team-badge { border-radius: 999px; padding: 4px 7px; color: #93c5fd; background: rgba(59,130,246,.14); border: 1px solid rgba(59,130,246,.22); font-size: .66rem; font-weight: 950; white-space: nowrap; }
+.roster-list { max-height: 270px; overflow: auto; background: rgba(255,255,255,.045); }
+.drawn-team { min-height: 260px; background: linear-gradient(180deg, rgba(59,130,246,.11), rgba(255,255,255,.04)); }
+.team-a { border-color: rgba(59,130,246,.25); }
+.team-b { border-color: rgba(255,205,86,.24); }
 .team-player { display: grid; grid-template-columns: 48px 1fr 90px 86px auto; gap: 6px; align-items: center; padding: 7px; border-radius: 12px; background: rgba(59,130,246,.08); border: 1px solid rgba(59,130,246,.13); }
+.team-player.draw-row { grid-template-columns: 42px minmax(120px, 1fr) 86px 78px auto; background: rgba(255,255,255,.055); }
+.team-player.roster-row { grid-template-columns: minmax(120px, 1fr) auto auto; background: rgba(255,255,255,.052); }
+.team-player.roster-row.pending { border-color: rgba(255,205,86,.25); background: rgba(255,205,86,.07); }
 .team-player.compact-line { grid-template-columns: 1fr auto; }
 .player-meta { min-width: 0; display: grid; gap: 2px; }
 .player-meta small { color: #a9b9af; font-size: .68rem; }
 .drag-handle { color: #3b82f6; font-size: .74rem; font-weight: 900; cursor: grab; }
+.draw-footer { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding-top: 2px; }
+.draw-footer small { margin-right: auto; color: #a9b9af; }
 .paste-box { min-height: 145px; font-size: .8rem; }
 .player-picker { min-height: 0; overflow: auto; display: grid; gap: 6px; padding-right: 3px; }
 .player-line { display: grid; grid-template-columns: 1.1fr .9fr .75fr 80px 70px 84px; gap: 6px; align-items: center; padding: 7px; border-radius: 12px; background: rgba(255,255,255,.055); }
@@ -194,7 +227,10 @@ textarea { width: 100%; min-height: 120px; color: #f5fbf7; background: rgba(255,
   .match-ops-grid, .match-list, .payment-list, .admin-action-grid, .admin-list, .admin-users { grid-template-columns: 1fr; }
   .broadcast-panel { position: static; }
   .inline-form { grid-template-columns: 1fr; }
-  .match-meta, .player-line, .event-form, .team-builder, .team-board, .team-player { grid-template-columns: 1fr; }
+  .match-meta, .player-line, .event-form, .team-builder, .team-board, .team-player, .draw-dashboard, .sheet-steps, .draw-meta { grid-template-columns: 1fr; }
+  .draw-hero, .draw-action, .draw-footer { align-items: stretch; flex-direction: column; }
+  .draw-button, .draw-footer .primary { width: 100%; }
+  .team-player.draw-row, .team-player.roster-row { grid-template-columns: 1fr; }
   .compact, .grid, .team-builder { overflow: visible; }
   .modal-card.wide { max-height: 94dvh; }
   .profile-pill { flex-wrap: wrap; justify-content: flex-end; }

@@ -75,7 +75,44 @@ function positionBalanceGroup(position: AthletePosition): PositionBalanceGroup {
   return 'ATAQUE';
 }
 
-const positionBalanceRank: Record<PositionBalanceGroup, number> = { GO: 0, DEFESA: 1, MEIO: 2, ATAQUE: 3 };
+function shuffleRows<T>(rows: T[]): T[] {
+  return rows.map((row) => ({ row, sort: Math.random() })).sort((left, right) => left.sort - right.sort).map((item) => item.row);
+}
+
+function drawBalancedTeams(players: MatchDraftPlayer[]): MatchDraftPlayer[] {
+  const playable = players.filter((player) => player.team !== 'PRESENTE_SEM_JOGAR');
+  const presentOnly = players.filter((player) => player.team === 'PRESENTE_SEM_JOGAR');
+  const teams: Record<'A' | 'B', MatchDraftPlayer[]> = { A: [], B: [] };
+  const counts: Record<'A' | 'B', Record<PositionBalanceGroup, number>> = { A: { GO: 0, DEFESA: 0, MEIO: 0, ATAQUE: 0 }, B: { GO: 0, DEFESA: 0, MEIO: 0, ATAQUE: 0 } };
+
+  for (const group of ['GO', 'DEFESA', 'MEIO', 'ATAQUE'] as PositionBalanceGroup[]) {
+    for (const player of shuffleRows(playable.filter((item) => positionBalanceGroup(item.position) === group))) {
+      const target = counts.A[group] < counts.B[group] ? 'A' : counts.B[group] < counts.A[group] ? 'B' : teams.A.length < teams.B.length ? 'A' : teams.B.length < teams.A.length ? 'B' : Math.random() < 0.5 ? 'A' : 'B';
+      teams[target].push({ ...player, team: target });
+      counts[target][group] += 1;
+    }
+  }
+
+  let drawOrder = 1;
+  const decorateTeam = (team: 'A' | 'B') => {
+    let goalkeepers = 0;
+    let linePlayers = 0;
+    return teams[team].map((player) => {
+      const goalkeeper = player.position === 'GO' && goalkeepers === 0;
+      const roleInMatch: MatchDraftPlayer['roleInMatch'] = goalkeeper ? 'GOLEIRO' : 'LINHA';
+      if (goalkeeper) goalkeepers += 1;
+      const startsOnBench = roleInMatch === 'LINHA' && linePlayers >= 6;
+      if (roleInMatch === 'LINHA') linePlayers += 1;
+      return { ...player, roleInMatch, startsOnBench, drawOrder: String(drawOrder++) };
+    });
+  };
+
+  return [
+    ...decorateTeam('A'),
+    ...decorateTeam('B'),
+    ...presentOnly.map((player) => ({ ...player, roleInMatch: 'PRESENTE_SEM_JOGAR' as const, startsOnBench: false, drawOrder: String(drawOrder++) }))
+  ];
+}
 
 function formatCardReason(reason: string) {
   return reason === 'CARTAO_VERMELHO' ? 'Vermelho direto' : 'Acúmulo de 3 amarelos';
@@ -629,34 +666,7 @@ function ExistingLineupEditor({ api, match, users, onSaved }: { api: ApiClient; 
   }
 
   function balanceTeamsByPosition() {
-    setPlayers((list) => {
-      const ordered = [...list].sort((left, right) => {
-        const groupDiff = positionBalanceRank[positionBalanceGroup(left.position)] - positionBalanceRank[positionBalanceGroup(right.position)];
-        if (groupDiff !== 0) return groupDiff;
-        return left.name.localeCompare(right.name, 'pt-BR');
-      });
-      const teams: Record<'A' | 'B', MatchDraftPlayer[]> = { A: [], B: [] };
-      const counts: Record<'A' | 'B', Record<PositionBalanceGroup, number>> = { A: { GO: 0, DEFESA: 0, MEIO: 0, ATAQUE: 0 }, B: { GO: 0, DEFESA: 0, MEIO: 0, ATAQUE: 0 } };
-      for (const player of ordered) {
-        const group = positionBalanceGroup(player.position);
-        const target = counts.A[group] < counts.B[group] ? 'A' : counts.B[group] < counts.A[group] ? 'B' : teams.A.length <= teams.B.length ? 'A' : 'B';
-        teams[target].push({ ...player, team: target });
-        counts[target][group] += 1;
-      }
-      let drawOrder = 1;
-      return (['A', 'B'] as const).flatMap((team) => {
-        let goalkeepers = 0;
-        let linePlayers = 0;
-        return teams[team].map((player) => {
-          const goalkeeper = player.position === 'GO' && goalkeepers === 0;
-          const roleInMatch: MatchDraftPlayer['roleInMatch'] = goalkeeper ? 'GOLEIRO' : 'LINHA';
-          if (goalkeeper) goalkeepers += 1;
-          const startsOnBench = roleInMatch === 'LINHA' && linePlayers >= 6;
-          if (roleInMatch === 'LINHA') linePlayers += 1;
-          return { ...player, roleInMatch, startsOnBench, drawOrder: String(drawOrder++) };
-        });
-      });
-    });
+    setPlayers((list) => drawBalancedTeams(list));
   }
 
   async function save() {
@@ -837,9 +847,10 @@ function OperationalMatchDialog({ api, users, activeSeasonId, onDone }: { api: A
   const assignedIds = new Set(players.map((player) => player.userId));
   const search = query.trim().toLowerCase();
   const searchResults = search.length < 3 ? [] : users.filter((user) => !assignedIds.has(user.id) && `${user.name} ${user.email}`.toLowerCase().includes(search)).slice(0, 8);
+  const pendingPlayers = players.filter((player) => player.team === 'PRESENTE_SEM_JOGAR');
   const teamA = players.filter((player) => player.team === 'A');
   const teamB = players.filter((player) => player.team === 'B');
-  const presentOnly = players.filter((player) => player.team === 'PRESENTE_SEM_JOGAR');
+  const teamsDrawn = teamA.length > 0 && teamB.length > 0 && pendingPlayers.length === 0;
 
   function selectedPlayersPayload(list = players) {
     const currentTeamA = list.filter((player) => player.team === 'A');
@@ -870,6 +881,10 @@ function OperationalMatchDialog({ api, users, activeSeasonId, onDone }: { api: A
 
   useEffect(() => {
     if (!open || !draftMatchId) return;
+    if (players.length > 0 && !teamsDrawn) {
+      setSaveStatus('Participantes selecionados. Faça o sorteio automático para gravar a escalação no banco.');
+      return;
+    }
     setSaveStatus('Salvando escalação...');
     const timer = window.setTimeout(() => {
       void saveLineup()
@@ -877,48 +892,16 @@ function OperationalMatchDialog({ api, users, activeSeasonId, onDone }: { api: A
         .catch((err) => setSaveStatus(err instanceof Error ? err.message : 'Falha ao salvar escalação.'));
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [open, draftMatchId, title, date, refereeName, teamAName, teamBName, players]);
+  }, [open, draftMatchId, title, date, refereeName, teamAName, teamBName, players, teamsDrawn]);
 
-  function addPlayer(user: User, team: MatchDraftPlayer['team']) {
+  function addParticipant(user: User) {
     const position = user.position ?? 'MC';
-    setPlayers((list) => [...list, { userId: user.id, name: user.name, email: user.email, position, team, roleInMatch: team === 'PRESENTE_SEM_JOGAR' ? 'PRESENTE_SEM_JOGAR' : position === 'GO' ? 'GOLEIRO' : 'LINHA', drawOrder: String(list.length + 1), startsOnBench: false }]);
+    setPlayers((list) => [...list, { userId: user.id, name: user.name, email: user.email, position, team: 'PRESENTE_SEM_JOGAR', roleInMatch: 'PRESENTE_SEM_JOGAR', drawOrder: String(list.length + 1), startsOnBench: false }]);
     setQuery('');
   }
 
   function balanceTeamsByPosition() {
-    setPlayers((list) => {
-      const ordered = [...list].sort((left, right) => {
-        const groupDiff = positionBalanceRank[positionBalanceGroup(left.position)] - positionBalanceRank[positionBalanceGroup(right.position)];
-        if (groupDiff !== 0) return groupDiff;
-        const positionDiff = left.position.localeCompare(right.position);
-        if (positionDiff !== 0) return positionDiff;
-        return left.name.localeCompare(right.name, 'pt-BR');
-      });
-      const teams: Record<'A' | 'B', MatchDraftPlayer[]> = { A: [], B: [] };
-      const counts: Record<'A' | 'B', Record<PositionBalanceGroup, number>> = {
-        A: { GO: 0, DEFESA: 0, MEIO: 0, ATAQUE: 0 },
-        B: { GO: 0, DEFESA: 0, MEIO: 0, ATAQUE: 0 }
-      };
-      for (const player of ordered) {
-        const group = positionBalanceGroup(player.position);
-        const target = counts.A[group] < counts.B[group] ? 'A' : counts.B[group] < counts.A[group] ? 'B' : teams.A.length <= teams.B.length ? 'A' : 'B';
-        teams[target].push({ ...player, team: target });
-        counts[target][group] += 1;
-      }
-      let drawOrder = 1;
-      return (['A', 'B'] as const).flatMap((team) => {
-        let goalkeepers = 0;
-        let linePlayers = 0;
-        return teams[team].map((player) => {
-          const isFirstGoalkeeper = player.position === 'GO' && goalkeepers === 0;
-          const roleInMatch: MatchDraftPlayer['roleInMatch'] = isFirstGoalkeeper ? 'GOLEIRO' : 'LINHA';
-          if (isFirstGoalkeeper) goalkeepers += 1;
-          const startsOnBench = roleInMatch === 'LINHA' && linePlayers >= 6;
-          if (roleInMatch === 'LINHA') linePlayers += 1;
-          return { ...player, roleInMatch, startsOnBench, drawOrder: String(drawOrder++) };
-        });
-      });
-    });
+    setPlayers((list) => drawBalancedTeams(list.map((player) => ({ ...player, team: player.team === 'PRESENTE_SEM_JOGAR' ? 'A' : player.team, roleInMatch: player.roleInMatch === 'PRESENTE_SEM_JOGAR' ? 'LINHA' : player.roleInMatch }))));
   }
 
   function updatePlayer(userId: string, patch: Partial<MatchDraftPlayer>) {
@@ -944,6 +927,10 @@ function OperationalMatchDialog({ api, users, activeSeasonId, onDone }: { api: A
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (!teamsDrawn) {
+      setSaveStatus('Faça o sorteio/divisão automática das equipes antes de salvar a súmula.');
+      return;
+    }
     await saveLineup();
     setOpen(false);
     setDraftMatchId('');
@@ -952,10 +939,14 @@ function OperationalMatchDialog({ api, users, activeSeasonId, onDone }: { api: A
   }
 
   function TeamList({ team, rows }: { team: 'A' | 'B'; rows: MatchDraftPlayer[] }) {
-    return <div className="team-list"><strong>{team === 'A' ? teamAName : teamBName} • sequência de troca</strong>{rows.length === 0 ? <small className="muted">Busque atleta e clique em {team === 'A' ? 'Time A' : 'Time B'}.</small> : rows.map((player, index) => <div className="team-player" key={player.userId} draggable onDragStart={() => setDraggedUserId(player.userId)} onDragOver={(event) => event.preventDefault()} onDrop={() => movePlayer(draggedUserId, player.userId, team)}><span className="drag-handle">↕ {index + 1}</span><div className="player-meta"><b>{player.name}</b><small>{positionLabel(player.position)}</small></div><select value={player.roleInMatch} onChange={(event) => updatePlayer(player.userId, { roleInMatch: event.target.value as MatchDraftPlayer['roleInMatch'] })}><option value="LINHA">Linha</option><option value="GOLEIRO">Goleiro</option></select><label className="bench"><input type="checkbox" checked={player.startsOnBench} onChange={(event) => updatePlayer(player.userId, { startsOnBench: event.target.checked })} /> Banco</label><button type="button" className="ghost" onClick={() => removePlayer(player.userId)}>Remover</button></div>)}</div>;
+    return <div className={`team-list drawn-team team-${team.toLowerCase()}`}><div className="team-title"><strong>{team === 'A' ? teamAName : teamBName}</strong><span>{rows.length} atletas</span></div>{rows.length === 0 ? <small className="muted">O time aparecerá aqui depois do sorteio automático.</small> : rows.map((player, index) => <div className="team-player draw-row" key={player.userId} draggable onDragStart={() => setDraggedUserId(player.userId)} onDragOver={(event) => event.preventDefault()} onDrop={() => movePlayer(draggedUserId, player.userId, team)}><span className="drag-handle">#{index + 1}</span><div className="player-meta"><b>{player.name}</b><small>{positionLabel(player.position)}</small></div><select value={player.roleInMatch} onChange={(event) => updatePlayer(player.userId, { roleInMatch: event.target.value as MatchDraftPlayer['roleInMatch'] })}><option value="LINHA">Linha</option><option value="GOLEIRO">Goleiro</option></select><label className="bench"><input type="checkbox" checked={player.startsOnBench} onChange={(event) => updatePlayer(player.userId, { startsOnBench: event.target.checked })} /> Banco</label><button type="button" className="ghost" onClick={() => removePlayer(player.userId)}>Remover</button></div>)}</div>;
   }
 
-  return <><button className="primary small" onClick={() => void openPersistentDraft()}>Criar jogo</button>{open && <div className="modal"><form className="card modal-card wide" onSubmit={submit}><div className="card-head"><h2>Nova súmula</h2><button type="button" className="ghost" onClick={() => setOpen(false)}>Fechar</button></div>{saveStatus && <p className="muted">{saveStatus}</p>}<div className="match-meta"><input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Título" /><input type="date" value={date} onChange={(event) => setDate(event.target.value)} /><input value={refereeName} onChange={(event) => setRefereeName(event.target.value)} placeholder="Árbitro" /><input value={teamAName} onChange={(event) => setTeamAName(event.target.value)} /><input value={teamBName} onChange={(event) => setTeamBName(event.target.value)} /><button type="button" className="primary" onClick={balanceTeamsByPosition} disabled={players.length < 2}>Balancear por posições</button></div><div className="team-builder"><section><h2>Buscar atleta</h2><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite 3 letras do nome ou e-mail" />{query.trim().length > 0 && query.trim().length < 3 && <p className="muted">Digite pelo menos 3 caracteres.</p>}<div className="search-results">{searchResults.map((user) => <article key={user.id}><strong>{user.name}</strong><small>{user.email} • {positionLabel(user.position)}</small><div className="actions"><button type="button" className="primary small" onClick={() => addPlayer(user, 'A')}>Time A</button><button type="button" className="primary small" onClick={() => addPlayer(user, 'B')}>Time B</button><button type="button" className="ghost" onClick={() => addPlayer(user, 'PRESENTE_SEM_JOGAR')}>Presente</button></div></article>)}</div><div className="team-list"><div className="card-head"><strong>Presentes para divisão</strong><button type="button" className="ghost" onClick={balanceTeamsByPosition} disabled={players.length < 2}>Dividir agora</button></div>{presentOnly.length === 0 ? <small className="muted">Marque atletas como presente e use o balanceamento automático; quem ficar aqui ao salvar súmula entra como presente sem jogar.</small> : presentOnly.map((player) => <div className="team-player compact-line" key={player.userId}><div className="player-meta"><b>{player.name}</b><small>{positionLabel(player.position)}</small></div><button type="button" className="ghost" onClick={() => removePlayer(player.userId)}>Remover</button></div>)}</div></section><section className="team-board"><TeamList team="A" rows={teamA} /><TeamList team="B" rows={teamB} /></section></div><button className="primary" disabled={!teamA.length || !teamB.length}>Salvar súmula</button></form></div>}</>;
+  const rosterRows = [...players].sort((left, right) => Number(left.drawOrder || 0) - Number(right.drawOrder || 0) || left.name.localeCompare(right.name, 'pt-BR'));
+  const positionOverview = ([['GO', 'Goleiros'], ['DEFESA', 'Defesa'], ['MEIO', 'Meio'], ['ATAQUE', 'Ataque']] as const).map(([group, label]) => ({ group, label, count: players.filter((player) => positionBalanceGroup(player.position) === group).length }));
+  const drawStatus = players.length < 2 ? 'Adicione pelo menos 2 atletas para liberar o sorteio.' : teamsDrawn ? 'Equipes sorteadas. Você ainda pode sortear novamente ou ajustar sequência/banco.' : 'Elenco pronto para sorteio aleatório por posições.';
+
+  return <><button className="primary small" onClick={() => void openPersistentDraft()}>Criar jogo</button>{open && <div className="modal"><form className="card modal-card wide draw-modal" onSubmit={submit}><div className="draw-hero"><div><span className="eyebrow">Súmula inteligente</span><h2>Montar jogo por presença e sorteio</h2><p className="muted">Inclua somente quem vai participar do jogo. A divisão em {teamAName} e {teamBName} é automática, aleatória e balanceada pelas posições oficiais.</p></div><button type="button" className="ghost" onClick={() => setOpen(false)}>Fechar</button></div><div className="sheet-steps"><span className="step-chip done">1. Dados</span><span className={`step-chip ${players.length ? 'done' : 'active'}`}>2. Participantes</span><span className={`step-chip ${teamsDrawn ? 'done' : players.length >= 2 ? 'active' : ''}`}>3. Sorteio</span></div>{saveStatus && <p className="status-line">{saveStatus}</p>}<div className="match-meta draw-meta"><input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Título" /><input type="date" value={date} onChange={(event) => setDate(event.target.value)} /><input value={refereeName} onChange={(event) => setRefereeName(event.target.value)} placeholder="Árbitro" /><input value={teamAName} onChange={(event) => setTeamAName(event.target.value)} /><input value={teamBName} onChange={(event) => setTeamBName(event.target.value)} /></div><div className="draw-dashboard"><article><span>Elenco</span><strong>{players.length}</strong><small>atletas no jogo</small></article>{positionOverview.map((item) => <article key={item.group}><span>{item.label}</span><strong>{item.count}</strong><small>posição base</small></article>)}</div><div className="draw-action"><div><strong>{teamsDrawn ? 'Sorteio concluído' : 'Divisão automática obrigatória'}</strong><small>{drawStatus}</small></div><button type="button" className="primary draw-button" onClick={balanceTeamsByPosition} disabled={players.length < 2}>{teamsDrawn ? 'Sortear novamente' : 'Sortear times'}</button></div><div className="team-builder draw-builder"><section className="draw-pool"><h2>Participantes do jogo</h2><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar atleta por nome ou e-mail" />{query.trim().length > 0 && query.trim().length < 3 && <p className="muted">Digite pelo menos 3 caracteres.</p>}<div className="search-results draw-search">{searchResults.map((user) => <article key={user.id}><strong>{user.name}</strong><small>{user.email} • {positionLabel(user.position)}</small><div className="actions"><button type="button" className="primary small" onClick={() => addParticipant(user)}>Adicionar ao jogo</button></div></article>)}</div><div className="team-list roster-list"><div className="team-title"><strong>Elenco selecionado</strong><span>{pendingPlayers.length ? `${pendingPlayers.length} aguardando` : teamsDrawn ? 'sorteado' : 'vazio'}</span></div>{rosterRows.length === 0 ? <small className="muted">Busque e adicione todos os atletas que jogarão. Quem estiver presente e não jogar será incluído depois, na súmula aberta do jogo.</small> : rosterRows.map((player) => <div className={`team-player roster-row ${player.team === 'PRESENTE_SEM_JOGAR' ? 'pending' : ''}`} key={player.userId}><div className="player-meta"><b>{player.name}</b><small>{positionLabel(player.position)}</small></div><span className="team-badge">{player.team === 'PRESENTE_SEM_JOGAR' ? 'Aguardando' : player.team === 'A' ? teamAName : teamBName}</span><button type="button" className="ghost" onClick={() => removePlayer(player.userId)}>Remover</button></div>)}</div></section><section className="team-board draw-teams"><TeamList team="A" rows={teamA} /><TeamList team="B" rows={teamB} /></section></div><div className="draw-footer"><small>{teamsDrawn ? 'Pronto para salvar: a súmula será criada com times e roteiro de troca já calculados.' : 'O salvamento final só libera após o sorteio para impedir escalação manual incorreta.'}</small><button className="primary" disabled={!teamsDrawn}>Salvar súmula</button></div></form></div>}</>;
 }
 
 function PaymentsPanel({ api, canCoordinate, users, activeSeasonId }: { api: ApiClient; canCoordinate: boolean; users: User[]; activeSeasonId: string }) {
