@@ -31,6 +31,23 @@ const createMatchSchema = z.object({
 const eventSchema = z.object({ userId: z.string().uuid(), relatedUserId: z.string().uuid().nullable().optional(), eventType: z.enum(['GOL', 'GOL_CONTRA', 'ASSISTENCIA', 'CARTAO_AMARELO', 'CARTAO_VERMELHO', 'CARTAO_AZUL']), minute: z.number().int().min(0).max(180), team: z.enum(['A', 'B']) });
 const scoreSchema = z.object({ teamAScore: z.number().int().min(0), teamBScore: z.number().int().min(0), events: z.array(eventSchema).default([]) });
 const correctionSchema = scoreSchema.extend({ reason: z.string().min(5).max(500) });
+const draftSchema = scoreSchema.extend({ clockSeconds: z.number().int().min(0).max(10800).default(0), clockRunning: z.boolean().default(false) });
+
+async function validateDraftSafety(matchId: string, body: z.infer<typeof draftSchema>): Promise<void> {
+  const match = await query<{ status: string }>('SELECT status FROM matches WHERE id = $1', [matchId]);
+  if (!match.rowCount) throw httpError(404, 'Súmula não encontrada.');
+  if (match.rows[0].status === 'CONFIRMED') throw httpError(409, 'Súmula confirmada não recebe rascunho operacional. Use correção auditada.');
+  if (match.rows[0].status === 'CANCELLED') throw httpError(409, 'Súmula cancelada não recebe rascunho operacional.');
+
+  const players = await query<{ user_id: string; team: string; present: boolean }>('SELECT user_id, team, present FROM match_players WHERE match_id = $1', [matchId]);
+  const playerMap = new Map(players.rows.map((player) => [player.user_id, player]));
+  for (const event of body.events) {
+    const player = playerMap.get(event.userId);
+    if (!player || !player.present || player.team === 'PRESENTE_SEM_JOGAR') throw httpError(400, 'O rascunho contém evento de atleta que não está escalado para jogar.');
+    if (player.team !== event.team) throw httpError(400, 'O time do evento no rascunho precisa ser igual ao time do atleta.');
+    if (event.relatedUserId && !playerMap.has(event.relatedUserId)) throw httpError(400, 'Atleta relacionado no rascunho não está na súmula.');
+  }
+}
 
 async function validateScoreSheet(matchId: string, body: z.infer<typeof scoreSchema>, allowConfirmed = false): Promise<void> {
   const match = await query<{ status: string }>('SELECT status FROM matches WHERE id = $1', [matchId]);
@@ -150,7 +167,10 @@ matchesRouter.get('/:id', asyncHandler(async (req, res) => {
   const match = await query(
     `SELECT id, season_id AS "seasonId", match_date AS "matchDate", title, referee_name AS "refereeName", status,
       scheduled_start AS "scheduledStart", scheduled_end AS "scheduledEnd", started_at AS "startedAt", ended_at AS "endedAt",
-      team_a_name AS "teamAName", team_b_name AS "teamBName", team_a_score AS "teamAScore", team_b_score AS "teamBScore"
+      team_a_name AS "teamAName", team_b_name AS "teamBName", team_a_score AS "teamAScore", team_b_score AS "teamBScore",
+      draft_team_a_score AS "draftTeamAScore", draft_team_b_score AS "draftTeamBScore", draft_events AS "draftEvents",
+      draft_clock_seconds AS "draftClockSeconds", draft_clock_running AS "draftClockRunning", draft_saved_at AS "draftSavedAt",
+      GREATEST(1, FLOOR(EXTRACT(EPOCH FROM ((((match_date + scheduled_end) AT TIME ZONE 'America/Sao_Paulo') - COALESCE(started_at, ((match_date + scheduled_start) AT TIME ZONE 'America/Sao_Paulo')))) / 60))::INTEGER AS "availableMinutes"
      FROM matches WHERE id = $1`,
     [req.params.id]
   );
@@ -181,15 +201,37 @@ matchesRouter.get('/:id', asyncHandler(async (req, res) => {
     events: events.rows,
     corrections: corrections.rows,
     rotation: {
-      A: buildTeamRotationPlan(lineA.map((player: any) => ({ id: player.userId, name: player.name, rotationOrder: player.rotationOrder, startsOnBench: player.startsOnBench })), 60),
-      B: buildTeamRotationPlan(lineB.map((player: any) => ({ id: player.userId, name: player.name, rotationOrder: player.rotationOrder, startsOnBench: player.startsOnBench })), 60)
+      A: buildTeamRotationPlan(lineA.map((player: any) => ({ id: player.userId, name: player.name, rotationOrder: player.rotationOrder, startsOnBench: player.startsOnBench })), match.rows[0].availableMinutes),
+      B: buildTeamRotationPlan(lineB.map((player: any) => ({ id: player.userId, name: player.name, rotationOrder: player.rotationOrder, startsOnBench: player.startsOnBench })), match.rows[0].availableMinutes)
     }
   });
 }));
 
 matchesRouter.post('/:id/start', requireRoles('ADMIN', 'COORDENADOR'), asyncHandler(async (req, res) => {
-  const result = await query("UPDATE matches SET status = 'RUNNING', started_at = now(), updated_at = now() WHERE id = $1 AND status = 'DRAFT' RETURNING id, status, started_at AS \"startedAt\"", [req.params.id]);
-  if (!result.rowCount) throw httpError(409, 'Somente súmulas em rascunho podem ser iniciadas.');
+  const result = await query("UPDATE matches SET status = 'RUNNING', started_at = clock_timestamp(), updated_at = clock_timestamp() WHERE id = $1 AND status = 'DRAFT' AND clock_timestamp() < ((match_date + scheduled_end) AT TIME ZONE 'America/Sao_Paulo') RETURNING id, status, started_at AS \"startedAt\"", [req.params.id]);
+  if (!result.rowCount) throw httpError(409, 'Somente súmulas em rascunho e dentro do horário da quadra podem ser iniciadas.');
+  res.json(result.rows[0]);
+}));
+
+matchesRouter.patch('/:id/draft', requireRoles('ADMIN', 'COORDENADOR'), asyncHandler(async (req: AuthRequest, res) => {
+  const parsedBody = validate(draftSchema, req.body);
+  const body = { ...parsedBody, events: parsedBody.events ?? [], clockSeconds: parsedBody.clockSeconds ?? 0, clockRunning: parsedBody.clockRunning ?? false };
+  await validateDraftSafety(req.params.id, body);
+  const result = await query(
+    `UPDATE matches
+     SET draft_team_a_score = $2,
+         draft_team_b_score = $3,
+         draft_events = $4::JSONB,
+         draft_clock_seconds = $5,
+         draft_clock_running = $6,
+         draft_saved_by = $7,
+         draft_saved_at = now(),
+         updated_at = now()
+     WHERE id = $1 AND status IN ('DRAFT', 'RUNNING', 'SUBMITTED')
+     RETURNING id, draft_saved_at AS "draftSavedAt"`,
+    [req.params.id, body.teamAScore, body.teamBScore, JSON.stringify(body.events), body.clockSeconds, body.clockRunning, req.user?.id]
+  );
+  if (!result.rowCount) throw httpError(409, 'Somente súmulas em rascunho, em andamento ou submetidas recebem autosave.');
   res.json(result.rows[0]);
 }));
 
@@ -213,9 +255,11 @@ matchesRouter.post('/:id/submit', requireRoles('ADMIN', 'COORDENADOR'), asyncHan
     await query('INSERT INTO match_events (match_id, user_id, related_user_id, event_type, minute, team) VALUES ($1, $2, $3, $4, $5, $6)', [req.params.id, event.userId, event.relatedUserId ?? null, event.eventType, event.minute, event.team ?? null]);
   }
   const result = await query(
-    `UPDATE matches SET status = 'SUBMITTED', team_a_score = $2, team_b_score = $3, ended_at = COALESCE(ended_at, now()), updated_at = now()
+    `UPDATE matches SET status = 'SUBMITTED', team_a_score = $2, team_b_score = $3,
+       draft_team_a_score = $2, draft_team_b_score = $3, draft_events = $4::JSONB, draft_saved_at = now(),
+       ended_at = COALESCE(ended_at, now()), updated_at = now()
      WHERE id = $1 RETURNING id, status, team_a_score AS "teamAScore", team_b_score AS "teamBScore"`,
-    [req.params.id, body.teamAScore, body.teamBScore]
+    [req.params.id, body.teamAScore, body.teamBScore, JSON.stringify(body.events)]
   );
   res.json(result.rows[0]);
 }));

@@ -48,7 +48,7 @@ Grupo de futebol de Balneário Camboriú/SC, com identidade visual própria insp
 
 ## Primeira implantação
 
-1. Execute `migrations/01_core_schema.sql`, `migrations/02_pagamentos_vencimento_pontuacao.sql`, `migrations/03_saldo_inicial_temporada_excel.sql` e `migrations/04_posicoes_oficiais_atletas.sql` no PostgreSQL Railway pelo TablePlus.
+1. Execute `migrations/01_core_schema.sql`, `migrations/02_pagamentos_vencimento_pontuacao.sql`, `migrations/03_saldo_inicial_temporada_excel.sql`, `migrations/04_posicoes_oficiais_atletas.sql`, `migrations/05_sumula_rascunho_operacional_autosave.sql` e `migrations/06_selecao_do_ano_7_votos.sql` no PostgreSQL Railway pelo TablePlus.
 2. Configure o serviço Railway do backend apontando para `backend/`.
 3. Configure o serviço Railway do frontend apontando para `frontend/`.
 4. Defina todas as variáveis nos respectivos serviços.
@@ -78,8 +78,12 @@ Grupo de futebol de Balneário Camboriú/SC, com identidade visual própria insp
 - Gestão de temporadas na interface: criar, iniciar e encerrar pelo painel `config.`.
 - Súmulas com placar, árbitro, times, jogadores, eventos, cronômetro e trocas.
 - Súmula com início oficial, cancelamento seguro antes da confirmação, submissão, confirmação e histórico de correções.
+- Botão `Jogo iniciado` grava no PostgreSQL o instante real de início (`TIMESTAMPTZ`) e a interface exibe o horário de Brasília.
+- Tempo operacional da partida respeita o aluguel fixo da quadra: começa quando o jogo for iniciado e sempre encerra às 21:00; se iniciar 20:04, o roteiro usa 56 minutos úteis.
+- Rascunho operacional da súmula tem autosave no banco para placar, eventos e estado de cronômetro antes da confirmação, evitando perda se o celular desligar.
 - Correção auditada de súmula confirmada para erros de gol, assistência, cartão ou placar, com motivo obrigatório.
 - Criação de súmula com busca de atleta por nome/e-mail, inclusão rápida em cada time e sequência de substituição arrastável.
+- Criação de súmula com lista de presença e balanceamento automático por posições, distribuindo goleiros, defensores/laterais, meias e atacantes entre os times da forma mais equilibrada possível.
 - Importação do saldo atual da tabela do Excel para continuar a temporada 2026 sem perder histórico.
 - Classificação compatível com a planilha real: pontos, jogos, vitórias, empates, derrotas, presença sem jogar, mensalidade, gols da equipe, aproveitamento e médias.
 - Rankings de artilharia, assistência, assiduidade e cartões, incluindo gol contra e pontos ponderados de cartões.
@@ -91,6 +95,7 @@ Grupo de futebol de Balneário Camboriú/SC, com identidade visual própria insp
 - Histórico de títulos, prêmios e badges por temporada.
 - Pódio visual, cards compactos, estados vazios e identidade visual própria para uso simples no celular.
 - Votação sigilosa para premiações encerrada a temporada.
+- Seleção do ano é votação estruturada com 7 escolhas por atleta: 1 goleiro (`GO`) e 6 jogadores de linha.
 - Cartões amarelo, vermelho e azul.
 - Suspensão automática por cartão vermelho ou 3 amarelos acumulados.
 - Baixa operacional de suspensão cumprida a partir de partida confirmada.

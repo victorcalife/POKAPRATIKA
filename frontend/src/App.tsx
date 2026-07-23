@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { ApiClient } from './api';
 import logoUrl from './assets/poka-pratika-logo.svg';
@@ -25,16 +25,24 @@ type CareerProfile = {
 };
 type PaymentRecord = { id?: string; userId?: string; userName?: string; referenceMonth: string; dueDate: string; amountCents: number; status: 'PENDING' | 'PAID' | 'LATE' | 'WAIVED'; paidAt?: string | null; earnsPoint: boolean; notes?: string | null };
 type AwardCategory = { code: string; label: string; votingEnabled: boolean };
-type MyVote = { categoryCode: string; votedUserId: string };
-type AwardResult = { categoryCode: string; label: string; userId: string; name: string; votes: number };
+type MyVote = { categoryCode: string; voteSlot: number; votedUserId: string };
+type AwardResult = { categoryCode: string; label: string; voteSlot: number; userId: string; name: string; votes: number };
 type StandingImportResult = { imported: Array<{ name: string; email: string; totalPoints: number }>; skipped: Array<{ identifier: string; reason: string }> };
-type MatchDraftPlayer = { userId: string; name: string; email: string; team: 'A' | 'B' | 'PRESENTE_SEM_JOGAR'; roleInMatch: 'GOLEIRO' | 'LINHA' | 'PRESENTE_SEM_JOGAR'; drawOrder: string; startsOnBench: boolean };
+type MatchDraftPlayer = { userId: string; name: string; email: string; position: AthletePosition; team: 'A' | 'B' | 'PRESENTE_SEM_JOGAR'; roleInMatch: 'GOLEIRO' | 'LINHA' | 'PRESENTE_SEM_JOGAR'; drawOrder: string; startsOnBench: boolean };
+type PositionBalanceGroup = 'GO' | 'DEFESA' | 'MEIO' | 'ATAQUE';
 
 type MatchDetail = MatchListItem & {
   scheduledStart?: string | null;
   scheduledEnd?: string | null;
   startedAt?: string | null;
   endedAt?: string | null;
+  availableMinutes?: number;
+  draftTeamAScore?: number;
+  draftTeamBScore?: number;
+  draftEvents?: MatchEventDraft[];
+  draftClockSeconds?: number;
+  draftClockRunning?: boolean;
+  draftSavedAt?: string | null;
   players: Array<{ userId: string; name: string; team: 'A' | 'B' | 'PRESENTE_SEM_JOGAR'; roleInMatch: string; drawOrder?: number | null; rotationOrder?: number | null; startsOnBench: boolean }>;
   events: Array<{ userId: string; relatedUserId?: string | null; eventType: string; minute: number; team?: 'A' | 'B' | null }>;
   corrections: MatchCorrection[];
@@ -58,6 +66,15 @@ function positionLabel(position?: AthletePosition | null): string {
   return athletePositionOptions.find((item) => item.value === position)?.label ?? 'MC • Meio campo';
 }
 
+function positionBalanceGroup(position: AthletePosition): PositionBalanceGroup {
+  if (position === 'GO') return 'GO';
+  if (position === 'ZG' || position === 'LD' || position === 'LE') return 'DEFESA';
+  if (position === 'MD' || position === 'MC' || position === 'MA') return 'MEIO';
+  return 'ATAQUE';
+}
+
+const positionBalanceRank: Record<PositionBalanceGroup, number> = { GO: 0, DEFESA: 1, MEIO: 2, ATAQUE: 3 };
+
 function formatCardReason(reason: string) {
   return reason === 'CARTAO_VERMELHO' ? 'Vermelho direto' : 'Acúmulo de 3 amarelos';
 }
@@ -76,6 +93,11 @@ function formatAverage(value: string | number | undefined): string {
 
 function formatPercent(value: number): string {
   return `${value.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+}
+
+function formatBrasiliaTime(value?: string | null): string {
+  if (!value) return 'não iniciado';
+  return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'medium' }).format(new Date(value));
 }
 
 export function App() {
@@ -411,20 +433,26 @@ function MatchesPanel({ api, canCoordinate, users, matches, activeSeasonId, onRe
   const [seconds, setSeconds] = useState(0);
 
   useEffect(() => {
-    if (!clockRunning) return;
-    const timer = window.setInterval(() => setSeconds((value) => Math.min(value + 1, 3600)), 1000);
+    if (!clockRunning || selectedMatch?.status === 'RUNNING') return;
+    const limitSeconds = (selectedMatch?.availableMinutes ?? 60) * 60;
+    const timer = window.setInterval(() => setSeconds((value) => Math.min(value + 1, limitSeconds)), 1000);
     return () => window.clearInterval(timer);
-  }, [clockRunning]);
+  }, [clockRunning, selectedMatch?.status, selectedMatch?.availableMinutes]);
 
   useEffect(() => {
     if (!selectedMatch) return;
     if (selectedMatch.status === 'RUNNING' && selectedMatch.startedAt) {
-      setSeconds(Math.min(3600, Math.max(0, Math.floor((Date.now() - new Date(selectedMatch.startedAt).getTime()) / 1000))));
+      const startedAt = new Date(selectedMatch.startedAt).getTime();
+      const limitSeconds = (selectedMatch.availableMinutes ?? 60) * 60;
+      const syncOfficialClock = () => setSeconds(Math.min(limitSeconds, Math.max(0, Math.floor((Date.now() - startedAt) / 1000))));
+      syncOfficialClock();
       setClockRunning(true);
-      return;
+      const timer = window.setInterval(syncOfficialClock, 1000);
+      return () => window.clearInterval(timer);
     }
-    if (selectedMatch.status !== 'RUNNING') setClockRunning(false);
-  }, [selectedMatch?.id, selectedMatch?.status, selectedMatch?.startedAt]);
+    setClockRunning(selectedMatch.draftClockRunning ?? false);
+    setSeconds(selectedMatch.draftClockSeconds ?? 0);
+  }, [selectedMatch?.id, selectedMatch?.status, selectedMatch?.startedAt, selectedMatch?.availableMinutes, selectedMatch?.draftClockSeconds, selectedMatch?.draftClockRunning]);
 
   async function openMatch(id: string) {
     setSelectedMatch(await api.request<MatchDetail>(`/matches/${id}`));
@@ -458,12 +486,13 @@ function MatchesPanel({ api, canCoordinate, users, matches, activeSeasonId, onRe
       <section className="card compact">
         <h2>Cronômetro</h2>
         {!selectedMatch ? <p className="muted">Abra uma súmula para operar o jogo.</p> : <>
-          <div className="scoreboard"><b>{selectedMatch.teamAName}</b><strong>{selectedMatch.teamAScore} x {selectedMatch.teamBScore}</strong><b>{selectedMatch.teamBName}</b></div>
+          <div className="scoreboard"><b>{selectedMatch.teamAName}</b><strong>{selectedMatch.status === 'CONFIRMED' ? selectedMatch.teamAScore : selectedMatch.draftTeamAScore ?? selectedMatch.teamAScore} x {selectedMatch.status === 'CONFIRMED' ? selectedMatch.teamBScore : selectedMatch.draftTeamBScore ?? selectedMatch.teamBScore}</strong><b>{selectedMatch.teamBName}</b></div>
           <div className="clock">{String(Math.floor(seconds / 60)).padStart(2, '0')}:{String(seconds % 60).padStart(2, '0')}</div>
-          <div className="actions"><button className="primary" onClick={() => setClockRunning((value) => !value)}>{clockRunning ? 'Pausar' : 'Iniciar cronômetro'}</button><button className="ghost" onClick={() => setSeconds(0)}>Zerar</button>{canCoordinate && selectedMatch.status === 'DRAFT' && <button className="primary" onClick={() => void startSelectedMatch()}>Iniciar súmula oficial</button>}{canCoordinate && ['DRAFT', 'RUNNING', 'SUBMITTED'].includes(selectedMatch.status) && <button className="ghost danger-action" onClick={() => void cancelSelectedMatch()}>Cancelar súmula</button>}</div>
+          {selectedMatch.startedAt && <p className="muted">Jogo iniciado oficialmente em {formatBrasiliaTime(selectedMatch.startedAt)} — horário de Brasília. A quadra encerra às 21:00; tempo útil desta súmula: {selectedMatch.availableMinutes ?? 60} min.</p>}
+          <div className="actions"><button className="primary" disabled={selectedMatch.status === 'RUNNING'} onClick={() => setClockRunning((value) => !value)}>{selectedMatch.status === 'RUNNING' ? 'Cronômetro oficial ativo' : clockRunning ? 'Pausar rascunho' : 'Iniciar rascunho'}</button><button className="ghost" disabled={selectedMatch.status === 'RUNNING'} onClick={() => setSeconds(0)}>Zerar</button>{canCoordinate && selectedMatch.status === 'DRAFT' && <button className="primary" onClick={() => void startSelectedMatch()}>Jogo iniciado</button>}{canCoordinate && ['DRAFT', 'RUNNING', 'SUBMITTED'].includes(selectedMatch.status) && <button className="ghost danger-action" onClick={() => void cancelSelectedMatch()}>Cancelar súmula</button>}</div>
           <SubstitutionManager rotation={selectedMatch.rotation} currentMinute={Math.floor(seconds / 60)} />
           <div className="chips">{selectedMatch.events.map((event, index) => <span className="chip" key={index}>{event.minute}' {eventLabel(event.eventType)}</span>)}</div>
-          {canCoordinate && selectedMatch.status !== 'CANCELLED' && <MatchScoreEditor api={api} match={selectedMatch} users={users} onSaved={async () => { await openMatch(selectedMatch.id); await onReload(); }} />}
+          {canCoordinate && selectedMatch.status !== 'CANCELLED' && <MatchScoreEditor api={api} match={selectedMatch} users={users} clockSeconds={seconds} clockRunning={clockRunning} onSaved={async () => { await openMatch(selectedMatch.id); await onReload(); }} />}
           <CorrectionHistory corrections={selectedMatch.corrections ?? []} />
         </>}
       </section>
@@ -480,24 +509,44 @@ function SubstitutionManager({ rotation, currentMinute }: { rotation: MatchDetai
   })}</div>;
 }
 
-function MatchScoreEditor({ api, match, users, onSaved }: { api: ApiClient; match: MatchDetail; users: User[]; onSaved: () => Promise<void> }) {
-  const [teamAScore, setTeamAScore] = useState(match.teamAScore);
-  const [teamBScore, setTeamBScore] = useState(match.teamBScore);
-  const [events, setEvents] = useState<MatchEventDraft[]>(match.events.map((event) => ({ userId: event.userId, relatedUserId: event.relatedUserId, eventType: event.eventType as MatchEventDraft['eventType'], minute: event.minute, team: event.team })));
+function MatchScoreEditor({ api, match, users, clockSeconds, clockRunning, onSaved }: { api: ApiClient; match: MatchDetail; users: User[]; clockSeconds: number; clockRunning: boolean; onSaved: () => Promise<void> }) {
+  const initialEvents = match.status === 'CONFIRMED' ? match.events : match.draftEvents?.length ? match.draftEvents : match.events;
+  const [teamAScore, setTeamAScore] = useState(match.status === 'CONFIRMED' ? match.teamAScore : match.draftTeamAScore ?? match.teamAScore);
+  const [teamBScore, setTeamBScore] = useState(match.status === 'CONFIRMED' ? match.teamBScore : match.draftTeamBScore ?? match.teamBScore);
+  const [events, setEvents] = useState<MatchEventDraft[]>(initialEvents.map((event) => ({ userId: event.userId, relatedUserId: event.relatedUserId, eventType: event.eventType as MatchEventDraft['eventType'], minute: event.minute, team: event.team })));
   const [userId, setUserId] = useState(match.players[0]?.userId ?? users[0]?.id ?? '');
   const [relatedUserId, setRelatedUserId] = useState('');
   const [eventType, setEventType] = useState<MatchEventDraft['eventType']>('GOL');
   const [minute, setMinute] = useState(0);
   const [team, setTeam] = useState<'A' | 'B'>('A');
   const [correctionReason, setCorrectionReason] = useState('');
+  const [autosaveStatus, setAutosaveStatus] = useState(match.draftSavedAt ? `Rascunho recuperado de ${formatBrasiliaTime(match.draftSavedAt)}.` : 'Rascunho pronto para autosave.');
+  const clockRef = useRef({ clockSeconds, clockRunning });
 
   useEffect(() => {
-    setTeamAScore(match.teamAScore);
-    setTeamBScore(match.teamBScore);
-    setEvents(match.events.map((event) => ({ userId: event.userId, relatedUserId: event.relatedUserId, eventType: event.eventType as MatchEventDraft['eventType'], minute: event.minute, team: event.team })));
+    const recoveredEvents = match.status === 'CONFIRMED' ? match.events : match.draftEvents?.length ? match.draftEvents : match.events;
+    setTeamAScore(match.status === 'CONFIRMED' ? match.teamAScore : match.draftTeamAScore ?? match.teamAScore);
+    setTeamBScore(match.status === 'CONFIRMED' ? match.teamBScore : match.draftTeamBScore ?? match.teamBScore);
+    setEvents(recoveredEvents.map((event) => ({ userId: event.userId, relatedUserId: event.relatedUserId, eventType: event.eventType as MatchEventDraft['eventType'], minute: event.minute, team: event.team })));
     setUserId(match.players[0]?.userId ?? users[0]?.id ?? '');
     setCorrectionReason('');
+    setAutosaveStatus(match.draftSavedAt ? `Rascunho recuperado de ${formatBrasiliaTime(match.draftSavedAt)}.` : 'Rascunho pronto para autosave.');
   }, [match.id]);
+
+  useEffect(() => {
+    clockRef.current = { clockSeconds, clockRunning };
+  }, [clockSeconds, clockRunning]);
+
+  useEffect(() => {
+    if (match.status === 'CONFIRMED' || match.status === 'CANCELLED') return;
+    setAutosaveStatus('Salvando rascunho no banco...');
+    const timer = window.setTimeout(() => {
+      void api.request<{ draftSavedAt: string }>(`/matches/${match.id}/draft`, { method: 'PATCH', body: JSON.stringify({ teamAScore, teamBScore, events, clockSeconds: clockRef.current.clockSeconds, clockRunning: clockRef.current.clockRunning }) })
+        .then((saved) => setAutosaveStatus(`Rascunho salvo em ${formatBrasiliaTime(saved.draftSavedAt)}.`))
+        .catch((err) => setAutosaveStatus(err instanceof Error ? err.message : 'Falha ao salvar rascunho.'));
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [api, match.id, match.status, teamAScore, teamBScore, events]);
 
   function addEvent() {
     if (!userId) return;
@@ -518,7 +567,7 @@ function MatchScoreEditor({ api, match, users, onSaved }: { api: ApiClient; matc
     await onSaved();
   }
 
-  return <div className="score-editor"><strong>{match.status === 'CONFIRMED' ? 'Correção auditada da súmula' : 'Fechamento da súmula'}</strong><div className="score-inputs"><input type="number" min="0" value={teamAScore} onChange={(event) => setTeamAScore(Number(event.target.value))} /><span>x</span><input type="number" min="0" value={teamBScore} onChange={(event) => setTeamBScore(Number(event.target.value))} /></div>{match.status === 'CONFIRMED' && <input value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} placeholder="Motivo da correção: gol/assistência/cartão lançado errado" required minLength={5} />}<div className="event-form"><select value={eventType} onChange={(event) => setEventType(event.target.value as MatchEventDraft['eventType'])}><option value="GOL">Gol</option><option value="GOL_CONTRA">Gol contra</option><option value="ASSISTENCIA">Assistência</option><option value="CARTAO_AMARELO">Cartão amarelo</option><option value="CARTAO_VERMELHO">Cartão vermelho</option><option value="CARTAO_AZUL">Cartão azul</option></select><select value={userId} onChange={(event) => setUserId(event.target.value)}>{match.players.map((player) => <option key={player.userId} value={player.userId}>{player.name}</option>)}</select><select value={relatedUserId} onChange={(event) => setRelatedUserId(event.target.value)}><option value="">Sem relacionado</option>{match.players.map((player) => <option key={player.userId} value={player.userId}>{player.name}</option>)}</select><input type="number" min="0" max="180" value={minute} onChange={(event) => setMinute(Number(event.target.value))} /><select value={team} onChange={(event) => setTeam(event.target.value as 'A' | 'B')}><option value="A">Time A</option><option value="B">Time B</option></select><button type="button" className="ghost" onClick={addEvent}>Adicionar</button></div><div className="chips">{events.map((item, index) => <button className="chip" key={`${item.userId}-${item.eventType}-${index}`} onClick={() => setEvents((list) => list.filter((_, itemIndex) => itemIndex !== index))}>{item.minute}' {eventLabel(item.eventType)}</button>)}</div><div className="actions"><button className="primary" onClick={submit} disabled={match.status === 'CONFIRMED' && correctionReason.trim().length < 5}>{match.status === 'CONFIRMED' ? 'Salvar correção' : 'Submeter'}</button>{match.status === 'SUBMITTED' && <button className="ghost" onClick={confirm}>Confirmar e pontuar</button>}</div></div>;
+  return <div className="score-editor"><strong>{match.status === 'CONFIRMED' ? 'Correção auditada da súmula' : 'Fechamento da súmula'}</strong>{match.status !== 'CONFIRMED' && <p className="muted">{autosaveStatus}</p>}<div className="score-inputs"><input type="number" min="0" value={teamAScore} onChange={(event) => setTeamAScore(Number(event.target.value))} /><span>x</span><input type="number" min="0" value={teamBScore} onChange={(event) => setTeamBScore(Number(event.target.value))} /></div>{match.status === 'CONFIRMED' && <input value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} placeholder="Motivo da correção: gol/assistência/cartão lançado errado" required minLength={5} />}<div className="event-form"><select value={eventType} onChange={(event) => setEventType(event.target.value as MatchEventDraft['eventType'])}><option value="GOL">Gol</option><option value="GOL_CONTRA">Gol contra</option><option value="ASSISTENCIA">Assistência</option><option value="CARTAO_AMARELO">Cartão amarelo</option><option value="CARTAO_VERMELHO">Cartão vermelho</option><option value="CARTAO_AZUL">Cartão azul</option></select><select value={userId} onChange={(event) => setUserId(event.target.value)}>{match.players.map((player) => <option key={player.userId} value={player.userId}>{player.name}</option>)}</select><select value={relatedUserId} onChange={(event) => setRelatedUserId(event.target.value)}><option value="">Sem relacionado</option>{match.players.map((player) => <option key={player.userId} value={player.userId}>{player.name}</option>)}</select><input type="number" min="0" max="180" value={minute} onChange={(event) => setMinute(Number(event.target.value))} /><select value={team} onChange={(event) => setTeam(event.target.value as 'A' | 'B')}><option value="A">Time A</option><option value="B">Time B</option></select><button type="button" className="ghost" onClick={addEvent}>Adicionar</button></div><div className="chips">{events.map((item, index) => <button className="chip" key={`${item.userId}-${item.eventType}-${index}`} onClick={() => setEvents((list) => list.filter((_, itemIndex) => itemIndex !== index))}>{item.minute}' {eventLabel(item.eventType)}</button>)}</div><div className="actions"><button className="primary" onClick={submit} disabled={match.status === 'CONFIRMED' && correctionReason.trim().length < 5}>{match.status === 'CONFIRMED' ? 'Salvar correção' : 'Submeter'}</button>{match.status === 'SUBMITTED' && <button className="ghost" onClick={confirm}>Confirmar e pontuar</button>}</div></div>;
 }
 
 function CorrectionHistory({ corrections }: { corrections: MatchCorrection[] }) {
@@ -544,8 +593,45 @@ function OperationalMatchDialog({ api, users, activeSeasonId, onDone }: { api: A
   const presentOnly = players.filter((player) => player.team === 'PRESENTE_SEM_JOGAR');
 
   function addPlayer(user: User, team: MatchDraftPlayer['team']) {
-    setPlayers((list) => [...list, { userId: user.id, name: user.name, email: user.email, team, roleInMatch: team === 'PRESENTE_SEM_JOGAR' ? 'PRESENTE_SEM_JOGAR' : user.position === 'GO' ? 'GOLEIRO' : 'LINHA', drawOrder: String(list.length + 1), startsOnBench: false }]);
+    const position = user.position ?? 'MC';
+    setPlayers((list) => [...list, { userId: user.id, name: user.name, email: user.email, position, team, roleInMatch: team === 'PRESENTE_SEM_JOGAR' ? 'PRESENTE_SEM_JOGAR' : position === 'GO' ? 'GOLEIRO' : 'LINHA', drawOrder: String(list.length + 1), startsOnBench: false }]);
     setQuery('');
+  }
+
+  function balanceTeamsByPosition() {
+    setPlayers((list) => {
+      const ordered = [...list].sort((left, right) => {
+        const groupDiff = positionBalanceRank[positionBalanceGroup(left.position)] - positionBalanceRank[positionBalanceGroup(right.position)];
+        if (groupDiff !== 0) return groupDiff;
+        const positionDiff = left.position.localeCompare(right.position);
+        if (positionDiff !== 0) return positionDiff;
+        return left.name.localeCompare(right.name, 'pt-BR');
+      });
+      const teams: Record<'A' | 'B', MatchDraftPlayer[]> = { A: [], B: [] };
+      const counts: Record<'A' | 'B', Record<PositionBalanceGroup, number>> = {
+        A: { GO: 0, DEFESA: 0, MEIO: 0, ATAQUE: 0 },
+        B: { GO: 0, DEFESA: 0, MEIO: 0, ATAQUE: 0 }
+      };
+      for (const player of ordered) {
+        const group = positionBalanceGroup(player.position);
+        const target = counts.A[group] < counts.B[group] ? 'A' : counts.B[group] < counts.A[group] ? 'B' : teams.A.length <= teams.B.length ? 'A' : 'B';
+        teams[target].push({ ...player, team: target });
+        counts[target][group] += 1;
+      }
+      let drawOrder = 1;
+      return (['A', 'B'] as const).flatMap((team) => {
+        let goalkeepers = 0;
+        let linePlayers = 0;
+        return teams[team].map((player) => {
+          const isFirstGoalkeeper = player.position === 'GO' && goalkeepers === 0;
+          const roleInMatch: MatchDraftPlayer['roleInMatch'] = isFirstGoalkeeper ? 'GOLEIRO' : 'LINHA';
+          if (isFirstGoalkeeper) goalkeepers += 1;
+          const startsOnBench = roleInMatch === 'LINHA' && linePlayers >= 6;
+          if (roleInMatch === 'LINHA') linePlayers += 1;
+          return { ...player, roleInMatch, startsOnBench, drawOrder: String(drawOrder++) };
+        });
+      });
+    });
   }
 
   function updatePlayer(userId: string, patch: Partial<MatchDraftPlayer>) {
@@ -587,10 +673,10 @@ function OperationalMatchDialog({ api, users, activeSeasonId, onDone }: { api: A
   }
 
   function TeamList({ team, rows }: { team: 'A' | 'B'; rows: MatchDraftPlayer[] }) {
-    return <div className="team-list"><strong>{team === 'A' ? teamAName : teamBName} • sequência de troca</strong>{rows.length === 0 ? <small className="muted">Busque atleta e clique em {team === 'A' ? 'Time A' : 'Time B'}.</small> : rows.map((player, index) => <div className="team-player" key={player.userId} draggable onDragStart={() => setDraggedUserId(player.userId)} onDragOver={(event) => event.preventDefault()} onDrop={() => movePlayer(draggedUserId, player.userId, team)}><span className="drag-handle">↕ {index + 1}</span><b>{player.name}</b><select value={player.roleInMatch} onChange={(event) => updatePlayer(player.userId, { roleInMatch: event.target.value as MatchDraftPlayer['roleInMatch'] })}><option value="LINHA">Linha</option><option value="GOLEIRO">Goleiro</option></select><label className="bench"><input type="checkbox" checked={player.startsOnBench} onChange={(event) => updatePlayer(player.userId, { startsOnBench: event.target.checked })} /> Banco</label><button type="button" className="ghost" onClick={() => removePlayer(player.userId)}>Remover</button></div>)}</div>;
+    return <div className="team-list"><strong>{team === 'A' ? teamAName : teamBName} • sequência de troca</strong>{rows.length === 0 ? <small className="muted">Busque atleta e clique em {team === 'A' ? 'Time A' : 'Time B'}.</small> : rows.map((player, index) => <div className="team-player" key={player.userId} draggable onDragStart={() => setDraggedUserId(player.userId)} onDragOver={(event) => event.preventDefault()} onDrop={() => movePlayer(draggedUserId, player.userId, team)}><span className="drag-handle">↕ {index + 1}</span><div className="player-meta"><b>{player.name}</b><small>{positionLabel(player.position)}</small></div><select value={player.roleInMatch} onChange={(event) => updatePlayer(player.userId, { roleInMatch: event.target.value as MatchDraftPlayer['roleInMatch'] })}><option value="LINHA">Linha</option><option value="GOLEIRO">Goleiro</option></select><label className="bench"><input type="checkbox" checked={player.startsOnBench} onChange={(event) => updatePlayer(player.userId, { startsOnBench: event.target.checked })} /> Banco</label><button type="button" className="ghost" onClick={() => removePlayer(player.userId)}>Remover</button></div>)}</div>;
   }
 
-  return <><button className="primary small" onClick={() => setOpen(true)}>Nova</button>{open && <div className="modal"><form className="card modal-card wide" onSubmit={submit}><div className="card-head"><h2>Nova súmula</h2><button type="button" className="ghost" onClick={() => setOpen(false)}>Fechar</button></div><div className="match-meta"><input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Título" /><input type="date" value={date} onChange={(event) => setDate(event.target.value)} /><input value={teamAName} onChange={(event) => setTeamAName(event.target.value)} /><input value={teamBName} onChange={(event) => setTeamBName(event.target.value)} /></div><div className="team-builder"><section><h2>Buscar atleta</h2><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite 3 letras do nome ou e-mail" />{query.trim().length > 0 && query.trim().length < 3 && <p className="muted">Digite pelo menos 3 caracteres.</p>}<div className="search-results">{searchResults.map((user) => <article key={user.id}><strong>{user.name}</strong><small>{user.email}</small><div className="actions"><button type="button" className="primary small" onClick={() => addPlayer(user, 'A')}>Time A</button><button type="button" className="primary small" onClick={() => addPlayer(user, 'B')}>Time B</button><button type="button" className="ghost" onClick={() => addPlayer(user, 'PRESENTE_SEM_JOGAR')}>Presente</button></div></article>)}</div><div className="team-list"><strong>Presentes sem jogar</strong>{presentOnly.length === 0 ? <small className="muted">Use para quem pagou presença, mas não entrou em campo.</small> : presentOnly.map((player) => <div className="team-player compact-line" key={player.userId}><b>{player.name}</b><button type="button" className="ghost" onClick={() => removePlayer(player.userId)}>Remover</button></div>)}</div></section><section className="team-board"><TeamList team="A" rows={teamA} /><TeamList team="B" rows={teamB} /></section></div><button className="primary" disabled={!teamA.length || !teamB.length}>Criar súmula</button></form></div>}</>;
+  return <><button className="primary small" onClick={() => setOpen(true)}>Nova</button>{open && <div className="modal"><form className="card modal-card wide" onSubmit={submit}><div className="card-head"><h2>Nova súmula</h2><button type="button" className="ghost" onClick={() => setOpen(false)}>Fechar</button></div><div className="match-meta"><input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Título" /><input type="date" value={date} onChange={(event) => setDate(event.target.value)} /><input value={teamAName} onChange={(event) => setTeamAName(event.target.value)} /><input value={teamBName} onChange={(event) => setTeamBName(event.target.value)} /><button type="button" className="primary" onClick={balanceTeamsByPosition} disabled={players.length < 2}>Balancear por posições</button></div><div className="team-builder"><section><h2>Buscar atleta</h2><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Digite 3 letras do nome ou e-mail" />{query.trim().length > 0 && query.trim().length < 3 && <p className="muted">Digite pelo menos 3 caracteres.</p>}<div className="search-results">{searchResults.map((user) => <article key={user.id}><strong>{user.name}</strong><small>{user.email} • {positionLabel(user.position)}</small><div className="actions"><button type="button" className="primary small" onClick={() => addPlayer(user, 'A')}>Time A</button><button type="button" className="primary small" onClick={() => addPlayer(user, 'B')}>Time B</button><button type="button" className="ghost" onClick={() => addPlayer(user, 'PRESENTE_SEM_JOGAR')}>Presente</button></div></article>)}</div><div className="team-list"><div className="card-head"><strong>Presentes para divisão</strong><button type="button" className="ghost" onClick={balanceTeamsByPosition} disabled={players.length < 2}>Dividir agora</button></div>{presentOnly.length === 0 ? <small className="muted">Marque atletas como presente e use o balanceamento automático; quem ficar aqui ao criar súmula entra como presente sem jogar.</small> : presentOnly.map((player) => <div className="team-player compact-line" key={player.userId}><div className="player-meta"><b>{player.name}</b><small>{positionLabel(player.position)}</small></div><button type="button" className="ghost" onClick={() => removePlayer(player.userId)}>Remover</button></div>)}</div></section><section className="team-board"><TeamList team="A" rows={teamA} /><TeamList team="B" rows={teamB} /></section></div><button className="primary" disabled={!teamA.length || !teamB.length}>Criar súmula</button></form></div>}</>;
 }
 
 function PaymentsPanel({ api, canCoordinate, users, activeSeasonId }: { api: ApiClient; canCoordinate: boolean; users: User[]; activeSeasonId: string }) {
@@ -628,6 +714,10 @@ function PaymentsPanel({ api, canCoordinate, users, activeSeasonId }: { api: Api
 function AwardsPanel({ api, users, activeSeason, isAdmin }: { api: ApiClient; users: User[]; activeSeason?: Season; isAdmin: boolean }) {
   const [category, setCategory] = useState('CRAQUE_GALERA');
   const [votedUserId, setVotedUserId] = useState(users[0]?.id ?? '');
+  const goalkeepers = users.filter((user) => user.position === 'GO');
+  const linePlayers = users.filter((user) => user.position !== 'GO');
+  const [selectionGoalkeeperId, setSelectionGoalkeeperId] = useState(goalkeepers[0]?.id ?? '');
+  const [selectionLineUserIds, setSelectionLineUserIds] = useState<string[]>(Array(6).fill(''));
   const [categories, setCategories] = useState<AwardCategory[]>([]);
   const [myVotes, setMyVotes] = useState<MyVote[]>([]);
   const [results, setResults] = useState<AwardResult[]>([]);
@@ -655,6 +745,8 @@ function AwardsPanel({ api, users, activeSeason, isAdmin }: { api: ApiClient; us
 
   useEffect(() => {
     if (!votedUserId && users[0]?.id) setVotedUserId(users[0].id);
+    if (!selectionGoalkeeperId && goalkeepers[0]?.id) setSelectionGoalkeeperId(goalkeepers[0].id);
+    setSelectionLineUserIds((current) => current.map((id, index) => id || linePlayers[index]?.id || ''));
   }, [users, votedUserId]);
 
   useEffect(() => {
@@ -662,9 +754,26 @@ function AwardsPanel({ api, users, activeSeason, isAdmin }: { api: ApiClient; us
     void loadResults().catch((err) => setMessage(err instanceof Error ? err.message : 'Falha ao carregar resultados.'));
   }, [activeSeason?.id, isAdmin]);
 
+  useEffect(() => {
+    const selectionVotes = myVotes.filter((voteItem) => voteItem.categoryCode === 'SELECAO_ANO');
+    const goalkeeperVote = selectionVotes.find((voteItem) => voteItem.voteSlot === 1);
+    const lineVotes = selectionVotes.filter((voteItem) => voteItem.voteSlot > 1).sort((left, right) => left.voteSlot - right.voteSlot);
+    if (goalkeeperVote) setSelectionGoalkeeperId(goalkeeperVote.votedUserId);
+    if (lineVotes.length) setSelectionLineUserIds(Array.from({ length: 6 }, (_, index) => lineVotes[index]?.votedUserId ?? linePlayers[index]?.id ?? ''));
+  }, [myVotes]);
+
   async function vote() {
     if (!activeSeason) return;
-    await api.request('/awards/vote', { method: 'POST', body: JSON.stringify({ seasonId: activeSeason.id, categoryCode: category, votedUserId }) });
+    if (category === 'SELECAO_ANO') {
+      const selectedIds = [selectionGoalkeeperId, ...selectionLineUserIds].filter(Boolean);
+      if (selectedIds.length !== 7 || new Set(selectedIds).size !== 7) {
+        setMessage('Seleção do ano precisa ter 1 goleiro e 6 jogadores de linha diferentes.');
+        return;
+      }
+      await api.request('/awards/selection-year', { method: 'POST', body: JSON.stringify({ seasonId: activeSeason.id, goalkeeperUserId: selectionGoalkeeperId, lineUserIds: selectionLineUserIds }) });
+    } else {
+      await api.request('/awards/vote', { method: 'POST', body: JSON.stringify({ seasonId: activeSeason.id, categoryCode: category, votedUserId }) });
+    }
     setMessage('Voto registrado com sigilo. Resultado visível apenas ao ADMIN.');
     await loadMyVotes();
     await loadResults();
@@ -681,9 +790,11 @@ function AwardsPanel({ api, users, activeSeason, isAdmin }: { api: ApiClient; us
     acc[item.label] = [...(acc[item.label] ?? []), item];
     return acc;
   }, {});
-  const voteMap = new Map(myVotes.map((item) => [item.categoryCode, users.find((user) => user.id === item.votedUserId)?.name ?? 'Atleta removido']));
+  const voteMap = new Map(myVotes.filter((item) => item.categoryCode !== 'SELECAO_ANO').map((item) => [item.categoryCode, users.find((user) => user.id === item.votedUserId)?.name ?? 'Atleta removido']));
+  const selectionVoteNames = myVotes.filter((item) => item.categoryCode === 'SELECAO_ANO').sort((left, right) => left.voteSlot - right.voteSlot).map((item) => users.find((user) => user.id === item.votedUserId)?.name ?? 'Atleta removido');
+  const selectionDuplicate = new Set([selectionGoalkeeperId, ...selectionLineUserIds].filter(Boolean)).size !== [selectionGoalkeeperId, ...selectionLineUserIds].filter(Boolean).length;
 
-  return <div className="grid two"><section className="card compact"><h2>Votação dos prêmios</h2><p className="muted">Escolha com carinho. O voto é sigiloso; a resenha fica para depois.</p><div className="inline-form"><select value={category} onChange={(event) => setCategory(event.target.value)}>{categories.map((item) => <option key={item.code} value={item.code}>{item.label}</option>)}</select><select value={votedUserId} onChange={(event) => setVotedUserId(event.target.value)}>{users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}</select><button className="primary" onClick={vote} disabled={!activeSeason || activeSeason.status !== 'CLOSED' || !categories.length}>Votar</button></div>{activeSeason?.status !== 'CLOSED' && <p className="muted">A votação abre quando a temporada for encerrada.</p>}{message && <p className="muted">{message}</p>}<div className="chips">{categories.map((item) => <span className="chip" key={item.code}>{item.label}: {voteMap.get(item.code) ?? 'sem voto'}</span>)}</div><div className="award-cards"><article><strong>🏆 Ranking automático</strong><span>Campeão, vice, terceiro, artilheiro, garçom e assiduidade geram prêmios e badges no fechamento.</span></article><article><strong>🗳️ Voto dos atletas</strong><span>Categorias vêm do banco; consolidar grava prêmio e badge histórico para cada vencedor.</span></article></div></section><section className="card compact"><div className="card-head"><h2>Apuração ADMIN</h2>{isAdmin && activeSeason && <button className="primary small" onClick={consolidate}>Consolidar</button>}</div>{!isAdmin ? <EmptyState title="Resultado sigiloso" text="A apuração fica protegida e só aparece para ADMIN." /> : Object.keys(groupedResults).length === 0 ? <EmptyState title="Sem votos ainda" text="Quando os atletas votarem, a liderança de cada categoria aparece aqui." /> : <div className="table-cards">{Object.entries(groupedResults).map(([label, rows]) => <article className="row-card" key={label}><strong>{label}</strong><span>{rows[0]?.name}</span><small>{rows.slice(0, 3).map((row) => `${row.name}: ${row.votes}`).join(' • ')}</small></article>)}</div>}</section></div>;
+  return <div className="grid two"><section className="card compact"><h2>Votação dos prêmios</h2><p className="muted">Escolha com carinho. O voto é sigiloso; a resenha fica para depois.</p><div className="inline-form"><select value={category} onChange={(event) => setCategory(event.target.value)}>{categories.map((item) => <option key={item.code} value={item.code}>{item.label}</option>)}</select>{category !== 'SELECAO_ANO' && <select value={votedUserId} onChange={(event) => setVotedUserId(event.target.value)}>{users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}</select>}<button className="primary" onClick={vote} disabled={!activeSeason || activeSeason.status !== 'CLOSED' || !categories.length || (category === 'SELECAO_ANO' && selectionDuplicate)}>Votar</button></div>{category === 'SELECAO_ANO' && <div className="selection-grid"><label><span>Goleiro da seleção</span><select value={selectionGoalkeeperId} onChange={(event) => setSelectionGoalkeeperId(event.target.value)}>{goalkeepers.map((user) => <option key={user.id} value={user.id}>{user.name} • {positionLabel(user.position)}</option>)}</select></label>{selectionLineUserIds.map((lineUserId, index) => <label key={`linha-${index}`}><span>Linha {index + 1}</span><select value={lineUserId} onChange={(event) => setSelectionLineUserIds((list) => list.map((current, currentIndex) => currentIndex === index ? event.target.value : current))}>{linePlayers.map((user) => <option key={user.id} value={user.id}>{user.name} • {positionLabel(user.position)}</option>)}</select></label>)}<small className="muted">Seleção do ano: 1 goleiro + 6 jogadores de linha diferentes.</small>{selectionDuplicate && <small className="muted">A seleção não pode repetir atleta.</small>}</div>}{activeSeason?.status !== 'CLOSED' && <p className="muted">A votação abre quando a temporada for encerrada.</p>}{message && <p className="muted">{message}</p>}<div className="chips">{categories.map((item) => <span className="chip" key={item.code}>{item.label}: {item.code === 'SELECAO_ANO' ? selectionVoteNames.length === 7 ? selectionVoteNames.join(', ') : 'sem voto' : voteMap.get(item.code) ?? 'sem voto'}</span>)}</div><div className="award-cards"><article><strong>🏆 Ranking automático</strong><span>Campeão, vice, terceiro, artilheiro, garçom e assiduidade geram prêmios e badges no fechamento.</span></article><article><strong>🗳️ Voto dos atletas</strong><span>Seleção do ano recebe 7 votos: 1 GO e 6 linhas. Demais categorias recebem voto único.</span></article></div></section><section className="card compact"><div className="card-head"><h2>Apuração ADMIN</h2>{isAdmin && activeSeason && <button className="primary small" onClick={consolidate}>Consolidar</button>}</div>{!isAdmin ? <EmptyState title="Resultado sigiloso" text="A apuração fica protegida e só aparece para ADMIN." /> : Object.keys(groupedResults).length === 0 ? <EmptyState title="Sem votos ainda" text="Quando os atletas votarem, a liderança de cada categoria aparece aqui." /> : <div className="table-cards">{Object.entries(groupedResults).map(([label, rows]) => <article className="row-card" key={label}><strong>{label}</strong><span>{rows[0]?.name}</span><small>{rows.slice(0, label === 'Seleção do ano' ? 8 : 3).map((row) => `${label === 'Seleção do ano' ? row.voteSlot === 1 ? 'GO ' : 'LINHA ' : ''}${row.name}: ${row.votes}`).join(' • ')}</small></article>)}</div>}</section></div>;
 }
 
 function normalizeHeader(value: string): string {
