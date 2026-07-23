@@ -15,7 +15,7 @@ Foi criada a base full-stack do sistema POKA PRÁTIKA, seguindo o padrão TOIT/R
 - Backend valida obrigatoriamente `NODE_ENV=production`, `PORT=8080`, `DATABASE_URL`, `JWT_SECRET`, `ALLOWED_ORIGINS` e `FRONTEND_URL` no startup Railway.
 - Backend expõe `/health` e `/ready`; `/ready` consulta o PostgreSQL com SQL nativo para homologar conexão real do serviço.
 - CSS customizado foi mantido apenas como complemento ao Tailwind para ajustes finos de densidade visual e responsividade; modais longas e telas pequenas agora priorizam rolagem segura para não cortar formulários operacionais.
-- Homologação final documentada em `docs/homologacao-final.md`; o sistema só deve ser considerado finalizado após execução dos fluxos de aceite na Railway.
+- Homologação final documentada em `docs/homologacao-final.md`; garantia técnica consolidada em `docs/garantia-qualidade.md`; o sistema só deve ser considerado finalizado após execução dos fluxos de aceite na Railway.
 
 ## Funcionalidades implementadas
 
@@ -133,11 +133,11 @@ Foi criada a base full-stack do sistema POKA PRÁTIKA, seguindo o padrão TOIT/R
 
 ## Validações executadas
 
-- `backend`: `npm run build` concluído com sucesso após hardening P1.
-- `frontend`: `npm run build` concluído com sucesso após ajustes de árbitro e responsividade.
+- `backend`: `npm run typecheck`, `npm run build` e `npm audit --audit-level=moderate` concluídos com sucesso após hardening P1.
+- `frontend`: `npm run typecheck`, `npm run build` e `npm audit --audit-level=moderate` concluídos com sucesso após ajustes de árbitro e responsividade.
 - `backend`: `npm audit --audit-level=moderate` sem vulnerabilidades.
 - `frontend`: `npm audit --audit-level=moderate` sem vulnerabilidades.
-- Checagem do workspace sem erros ativos.
+- Checagem do workspace sem erros ativos, sem `.env`, sem ORM operacional e sem `console.log`/`window.confirm`/`alert` operacional.
 
 ## Próximo passo técnico recomendado
 

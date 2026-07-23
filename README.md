@@ -58,6 +58,7 @@ Grupo de futebol de Balneário Camboriú/SC, com identidade visual própria insp
 ## Homologação final
 
 - O checklist oficial está em `docs/homologacao-final.md`.
+- A garantia técnica de qualidade está em `docs/garantia-qualidade.md`.
 - O sistema só deve ser considerado finalizado após todos os fluxos de aceite serem executados na Railway sem erro bloqueante.
 
 ## Roteiro operacional pós-migração
