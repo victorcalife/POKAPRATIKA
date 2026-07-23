@@ -3,9 +3,9 @@
   <desc id="desc">Escudo original com bola torta, chuteira cômica e referência praiana a Balneário Camboriú.</desc>
   <defs>
     <linearGradient id="shield" x1="96" y1="24" x2="416" y2="488" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#16C784"/>
-      <stop offset="0.48" stop-color="#0A7F55"/>
-      <stop offset="1" stop-color="#052014"/>
+      <stop stop-color="#3B82F6"/>
+      <stop offset="0.48" stop-color="#2563EB"/>
+      <stop offset="1" stop-color="#071B46"/>
     </linearGradient>
     <linearGradient id="sun" x1="358" y1="70" x2="434" y2="146" gradientUnits="userSpaceOnUse">
       <stop stop-color="#FFE36E"/>
@@ -20,36 +20,36 @@
   <path d="M256 48C331 48 390 73 418 94V235C418 337 350 414 256 459C162 414 94 337 94 235V94C122 73 181 48 256 48Z" stroke="white" stroke-opacity="0.72" stroke-width="10"/>
 
   <circle cx="396" cy="108" r="38" fill="url(#sun)"/>
-  <path d="M136 150C176 116 221 104 266 114C296 121 318 134 341 152" stroke="#DFFCEF" stroke-width="10" stroke-linecap="round" opacity="0.85"/>
-  <path d="M118 169C167 145 213 143 254 158C290 171 317 193 355 198C376 201 395 197 412 190" stroke="#DFFCEF" stroke-width="8" stroke-linecap="round" opacity="0.52"/>
+  <path d="M136 150C176 116 221 104 266 114C296 121 318 134 341 152" stroke="#DBEAFE" stroke-width="10" stroke-linecap="round" opacity="0.85"/>
+  <path d="M118 169C167 145 213 143 254 158C290 171 317 193 355 198C376 201 395 197 412 190" stroke="#DBEAFE" stroke-width="8" stroke-linecap="round" opacity="0.52"/>
 
   <g transform="translate(82 130) rotate(-8 174 134)">
-    <circle cx="178" cy="142" r="78" fill="#F5FBF7" stroke="#07120D" stroke-width="8"/>
-    <path d="M178 74L211 99L198 138H158L145 99L178 74Z" fill="#07120D"/>
-    <path d="M117 127L145 99L158 138L133 166L101 156L117 127Z" fill="#07120D"/>
-    <path d="M239 127L211 99L198 138L223 166L255 156L239 127Z" fill="#07120D"/>
-    <path d="M133 166L158 138H198L223 166L211 205H145L133 166Z" fill="#07120D"/>
-    <path d="M145 205L133 166L101 156C107 184 123 202 145 205Z" fill="#07120D"/>
-    <path d="M211 205L223 166L255 156C249 184 233 202 211 205Z" fill="#07120D"/>
-    <path d="M101 156C102 122 119 93 145 99" stroke="#07120D" stroke-width="7" stroke-linecap="round"/>
-    <path d="M255 156C254 122 237 93 211 99" stroke="#07120D" stroke-width="7" stroke-linecap="round"/>
+    <circle cx="178" cy="142" r="78" fill="#F5FBF7" stroke="#061631" stroke-width="8"/>
+    <path d="M178 74L211 99L198 138H158L145 99L178 74Z" fill="#061631"/>
+    <path d="M117 127L145 99L158 138L133 166L101 156L117 127Z" fill="#061631"/>
+    <path d="M239 127L211 99L198 138L223 166L255 156L239 127Z" fill="#061631"/>
+    <path d="M133 166L158 138H198L223 166L211 205H145L133 166Z" fill="#061631"/>
+    <path d="M145 205L133 166L101 156C107 184 123 202 145 205Z" fill="#061631"/>
+    <path d="M211 205L223 166L255 156C249 184 233 202 211 205Z" fill="#061631"/>
+    <path d="M101 156C102 122 119 93 145 99" stroke="#061631" stroke-width="7" stroke-linecap="round"/>
+    <path d="M255 156C254 122 237 93 211 99" stroke="#061631" stroke-width="7" stroke-linecap="round"/>
   </g>
 
   <g transform="translate(130 280) rotate(9 132 55)">
-    <path d="M42 72C93 46 139 34 196 40C219 43 236 55 250 72C258 82 255 97 243 101C185 121 119 119 52 100C32 94 27 80 42 72Z" fill="#FFDD57" stroke="#07120D" stroke-width="8"/>
-    <path d="M68 76C105 63 143 56 191 60" stroke="#07120D" stroke-width="8" stroke-linecap="round" opacity="0.75"/>
-    <path d="M81 54L98 76M118 44L130 70M156 40L164 66" stroke="#07120D" stroke-width="7" stroke-linecap="round"/>
-    <path d="M213 77C230 84 235 93 224 97" stroke="#07120D" stroke-width="7" stroke-linecap="round" opacity="0.7"/>
-    <circle cx="53" cy="86" r="6" fill="#07120D"/>
-    <circle cx="82" cy="94" r="6" fill="#07120D"/>
-    <circle cx="112" cy="100" r="6" fill="#07120D"/>
-    <path d="M18 48C5 35 5 20 19 15C34 10 44 21 39 34" stroke="#DFFCEF" stroke-width="8" stroke-linecap="round" opacity="0.9"/>
+    <path d="M42 72C93 46 139 34 196 40C219 43 236 55 250 72C258 82 255 97 243 101C185 121 119 119 52 100C32 94 27 80 42 72Z" fill="#FFDD57" stroke="#061631" stroke-width="8"/>
+    <path d="M68 76C105 63 143 56 191 60" stroke="#061631" stroke-width="8" stroke-linecap="round" opacity="0.75"/>
+    <path d="M81 54L98 76M118 44L130 70M156 40L164 66" stroke="#061631" stroke-width="7" stroke-linecap="round"/>
+    <path d="M213 77C230 84 235 93 224 97" stroke="#061631" stroke-width="7" stroke-linecap="round" opacity="0.7"/>
+    <circle cx="53" cy="86" r="6" fill="#061631"/>
+    <circle cx="82" cy="94" r="6" fill="#061631"/>
+    <circle cx="112" cy="100" r="6" fill="#061631"/>
+    <path d="M18 48C5 35 5 20 19 15C34 10 44 21 39 34" stroke="#DBEAFE" stroke-width="8" stroke-linecap="round" opacity="0.9"/>
   </g>
 
-  <path d="M132 382C173 402 214 412 256 412C298 412 339 402 380 382" stroke="#DFFCEF" stroke-width="10" stroke-linecap="round" opacity="0.84"/>
-  <path d="M155 407C188 421 222 428 256 428C290 428 324 421 357 407" stroke="#DFFCEF" stroke-width="7" stroke-linecap="round" opacity="0.5"/>
+  <path d="M132 382C173 402 214 412 256 412C298 412 339 402 380 382" stroke="#DBEAFE" stroke-width="10" stroke-linecap="round" opacity="0.84"/>
+  <path d="M155 407C188 421 222 428 256 428C290 428 324 421 357 407" stroke="#DBEAFE" stroke-width="7" stroke-linecap="round" opacity="0.5"/>
 
-  <text x="256" y="96" text-anchor="middle" font-family="Arial Black, Impact, sans-serif" font-size="42" fill="#F5FBF7" letter-spacing="1">POKA</text>
-  <text x="256" y="456" text-anchor="middle" font-family="Arial Black, Impact, sans-serif" font-size="34" fill="#F5FBF7" letter-spacing="1">PRÁTIKA</text>
-  <text x="256" y="482" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#BEEED7" letter-spacing="2">BALNEÁRIO CAMBORIÚ • SC</text>
+  <text x="256" y="88" text-anchor="middle" font-family="Arial Black, Impact, sans-serif" font-size="40" fill="#F5FBF7" letter-spacing="1">POKA</text>
+  <text x="256" y="124" text-anchor="middle" font-family="Arial Black, Impact, sans-serif" font-size="32" fill="#F5FBF7" letter-spacing="1">PRÁTIKA</text>
+  <text x="256" y="482" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#BFDBFE" letter-spacing="2">BALNEÁRIO CAMBORIÚ • SC</text>
 </svg>

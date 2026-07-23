@@ -378,7 +378,7 @@ function SeasonPanel({ api, standings, rankings, suspensions, matches, canCoordi
             <XAxis dataKey="name" hide />
             <YAxis hide />
             <Tooltip />
-            <Bar dataKey="total_points" fill="#16c784" radius={[8, 8, 0, 0]} />
+            <Bar dataKey="total_points" fill="#3b82f6" radius={[8, 8, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </section>

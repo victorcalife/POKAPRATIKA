@@ -62,6 +62,7 @@ O frontend é servido por Nginx e gera `/runtime-config.js` na inicialização d
 
 - O checklist oficial está em `docs/homologacao-final.md`.
 - A garantia técnica de qualidade está em `docs/garantia-qualidade.md`.
+- Problemas comuns de deploy Railway estão em `docs/troubleshooting-railway.md`.
 - O sistema só deve ser considerado finalizado após todos os fluxos de aceite serem executados na Railway sem erro bloqueante.
 
 ## Roteiro operacional pós-migração

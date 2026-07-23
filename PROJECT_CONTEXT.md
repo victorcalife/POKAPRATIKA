@@ -10,13 +10,13 @@ Foi criada a base full-stack do sistema POKA PRÁTIKA, seguindo o padrão TOIT/R
 - Backend Node.js/TypeScript com Express e PostgreSQL via `pg`, sem ORM.
 - Frontend React/Vite/TypeScript/Tailwind, mobile-first e interface compacta.
 - Frontend em produção usa Nginx com `docker-entrypoint.sh` para gerar `/runtime-config.js` a partir de `VITE_API_URL` no runtime Railway, evitando tela branca quando a variável existe no serviço mas não entrou no build Vite.
-- Identidade visual original criada em `frontend/src/assets/poka-pratika-logo.svg`, com tom cômico de futebol amador/perna de pau e referência a Balneário Camboriú/SC.
+- Identidade visual original criada em `frontend/src/assets/poka-pratika-logo.svg`, com tom cômico de futebol amador/perna de pau, referência a Balneário Camboriú/SC e paleta azul média aplicada ao escudo e aos elementos de destaque do sistema.
 - Migrações SQL manuais em `migrations/01_core_schema.sql`, `migrations/02_pagamentos_vencimento_pontuacao.sql`, `migrations/03_saldo_inicial_temporada_excel.sql`, `migrations/04_posicoes_oficiais_atletas.sql`, `migrations/05_sumula_rascunho_operacional_autosave.sql`, `migrations/06_selecao_do_ano_7_votos.sql`, `migrations/07_eventos_gol_contra.sql` e `migrations/08_email_case_insensitive_unico.sql`.
 - Sem criação de `.env` e sem hardcode de credenciais/URLs.
 - Backend valida obrigatoriamente `NODE_ENV=production`, `PORT=8080`, `DATABASE_URL`, `JWT_SECRET`, `ALLOWED_ORIGINS` e `FRONTEND_URL` no startup Railway.
 - Backend expõe `/health` e `/ready`; `/ready` consulta o PostgreSQL com SQL nativo para homologar conexão real do serviço.
 - CSS customizado foi mantido apenas como complemento ao Tailwind para ajustes finos de densidade visual e responsividade; modais longas e telas pequenas agora priorizam rolagem segura para não cortar formulários operacionais.
-- Homologação final documentada em `docs/homologacao-final.md`; garantia técnica consolidada em `docs/garantia-qualidade.md`; o sistema só deve ser considerado finalizado após execução dos fluxos de aceite na Railway.
+- Homologação final documentada em `docs/homologacao-final.md`; garantia técnica consolidada em `docs/garantia-qualidade.md`; troubleshooting Railway em `docs/troubleshooting-railway.md`; o sistema só deve ser considerado finalizado após execução dos fluxos de aceite na Railway.
 
 ## Funcionalidades implementadas
 
@@ -109,7 +109,7 @@ Foi criada a base full-stack do sistema POKA PRÁTIKA, seguindo o padrão TOIT/R
 - Suspensões abertas podem ser marcadas como cumpridas na temporada a partir de uma partida confirmada.
 - Painel administrativo permite colar a tabela atual do Excel com cabeçalho e importar o saldo inicial da temporada, retornando linhas importadas e linhas ignoradas para revisão.
 - O formulário antigo de criação de súmula foi removido; existe apenas o fluxo operacional com busca e drag-and-drop.
-- UI refinada com logo original, pódios, cards, microcopy cômica, modais roláveis e layout compacto/mobile-first.
+- UI refinada com logo original azul, palavra `PRÁTIKA` abaixo de `POKA` no símbolo, pódios, cards, microcopy cômica, modais roláveis, listas suspensas com opções em fonte preta e layout compacto/mobile-first com line-height global reduzido em 10%.
 
 ## Regras importantes consolidadas
 
