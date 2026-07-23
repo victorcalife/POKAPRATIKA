@@ -13,7 +13,7 @@ type RankingPayload = {
   cards: Array<{ userId: string; name: string; cardPoints: number; totalCards: number; gamesPlayed: number; average: string | number }>;
 };
 type Suspension = { id: string; userName: string; reason: string; triggerMatchTitle: string; servedAt?: string | null };
-type MatchEventDraft = { userId: string; relatedUserId?: string | null; eventType: 'GOL' | 'GOL_CONTRA' | 'ASSISTENCIA' | 'CARTAO_AMARELO' | 'CARTAO_VERMELHO' | 'CARTAO_AZUL'; minute: number; team?: 'A' | 'B' | null };
+type MatchEventDraft = { userId: string; relatedUserId?: string | null; eventType: 'GOL' | 'GOL_CONTRA' | 'ASSISTENCIA' | 'CARTAO_AMARELO' | 'CARTAO_VERMELHO' | 'CARTAO_AZUL'; minute: number; team?: 'A' | 'B' | null; occurredAt?: string | null; createdAt?: string | null };
 type MatchCorrection = { id: string; reason: string; previousTeamAScore: number; previousTeamBScore: number; newTeamAScore: number; newTeamBScore: number; correctedByName: string; createdAt: string; previousEvents: MatchEventDraft[]; newEvents: MatchEventDraft[] };
 type CareerProfile = {
   profile: User;
@@ -46,7 +46,7 @@ type MatchDetail = MatchListItem & {
   draftClockRunning?: boolean;
   draftSavedAt?: string | null;
   players: Array<{ userId: string; name: string; team: 'A' | 'B' | 'PRESENTE_SEM_JOGAR'; roleInMatch: string; drawOrder?: number | null; rotationOrder?: number | null; startsOnBench: boolean }>;
-  events: Array<{ userId: string; relatedUserId?: string | null; eventType: string; minute: number; team?: 'A' | 'B' | null }>;
+  events: Array<{ userId: string; relatedUserId?: string | null; eventType: string; minute: number; team?: 'A' | 'B' | null; occurredAt?: string | null; createdAt?: string | null }>;
   corrections: MatchCorrection[];
   rotation: Record<'A' | 'B', { reserves: number; firstCycleMinutes: number; secondCycleMinutes: number; schedule: Array<{ minute: number; label: string; entering: string[]; leaving: string[] }> }>;
 };
@@ -100,6 +100,11 @@ function formatPercent(value: number): string {
 function formatBrasiliaTime(value?: string | null): string {
   if (!value) return 'não iniciado';
   return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'medium' }).format(new Date(value));
+}
+
+function formatBrasiliaClock(value?: string | null): string {
+  if (!value) return '—';
+  return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(value));
 }
 
 function downloadCsv(filename: string, rows: Array<Record<string, string | number | boolean | null | undefined>>) {
@@ -681,12 +686,13 @@ function MatchScoreEditor({ api, match, users, clockSeconds, clockRunning, onSav
   const initialEvents = match.status === 'CONFIRMED' ? match.events : match.draftEvents?.length ? match.draftEvents : match.events;
   const [teamAScore, setTeamAScore] = useState(match.status === 'CONFIRMED' ? match.teamAScore : match.draftTeamAScore ?? match.teamAScore);
   const [teamBScore, setTeamBScore] = useState(match.status === 'CONFIRMED' ? match.teamBScore : match.draftTeamBScore ?? match.teamBScore);
-  const [events, setEvents] = useState<MatchEventDraft[]>(initialEvents.map((event) => ({ userId: event.userId, relatedUserId: event.relatedUserId, eventType: event.eventType as MatchEventDraft['eventType'], minute: event.minute, team: event.team })));
+  const [events, setEvents] = useState<MatchEventDraft[]>(initialEvents.map((event) => ({ userId: event.userId, relatedUserId: event.relatedUserId, eventType: event.eventType as MatchEventDraft['eventType'], minute: event.minute, team: event.team, occurredAt: event.occurredAt ?? event.createdAt ?? null, createdAt: event.createdAt ?? null })));
   const [userId, setUserId] = useState(match.players[0]?.userId ?? users[0]?.id ?? '');
   const [relatedUserId, setRelatedUserId] = useState('');
   const [eventType, setEventType] = useState<MatchEventDraft['eventType']>('GOL');
   const [minute, setMinute] = useState(0);
   const [correctionReason, setCorrectionReason] = useState('');
+  const [pendingQuickEvent, setPendingQuickEvent] = useState<{ userId: string; eventType: MatchEventDraft['eventType'] } | null>(null);
   const [autosaveStatus, setAutosaveStatus] = useState(match.draftSavedAt ? `Rascunho recuperado de ${formatBrasiliaTime(match.draftSavedAt)}.` : 'Rascunho pronto para autosave.');
   const clockRef = useRef({ clockSeconds, clockRunning });
 
@@ -694,9 +700,10 @@ function MatchScoreEditor({ api, match, users, clockSeconds, clockRunning, onSav
     const recoveredEvents = match.status === 'CONFIRMED' ? match.events : match.draftEvents?.length ? match.draftEvents : match.events;
     setTeamAScore(match.status === 'CONFIRMED' ? match.teamAScore : match.draftTeamAScore ?? match.teamAScore);
     setTeamBScore(match.status === 'CONFIRMED' ? match.teamBScore : match.draftTeamBScore ?? match.teamBScore);
-    setEvents(recoveredEvents.map((event) => ({ userId: event.userId, relatedUserId: event.relatedUserId, eventType: event.eventType as MatchEventDraft['eventType'], minute: event.minute, team: event.team })));
+    setEvents(recoveredEvents.map((event) => ({ userId: event.userId, relatedUserId: event.relatedUserId, eventType: event.eventType as MatchEventDraft['eventType'], minute: event.minute, team: event.team, occurredAt: event.occurredAt ?? event.createdAt ?? null, createdAt: event.createdAt ?? null })));
     setUserId(match.players[0]?.userId ?? users[0]?.id ?? '');
     setCorrectionReason('');
+    setPendingQuickEvent(null);
     setAutosaveStatus(match.draftSavedAt ? `Rascunho recuperado de ${formatBrasiliaTime(match.draftSavedAt)}.` : 'Rascunho pronto para autosave.');
   }, [match.id]);
 
@@ -720,12 +727,13 @@ function MatchScoreEditor({ api, match, users, clockSeconds, clockRunning, onSav
     const selectedPlayer = match.players.find((player) => player.userId === userId);
     if (!selectedPlayer || selectedPlayer.team === 'PRESENTE_SEM_JOGAR') return;
     const eventTeam = selectedPlayer.team === 'A' ? 'A' : 'B';
-    setEvents((list) => [...list, { userId, relatedUserId: relatedUserId || null, eventType, minute, team: eventTeam }]);
+    setEvents((list) => [...list, { userId, relatedUserId: relatedUserId || null, eventType, minute, team: eventTeam, occurredAt: new Date().toISOString() }]);
   }
   function addQuickEvent(player: MatchDetail['players'][number], quickEventType: MatchEventDraft['eventType']) {
     if (player.team === 'PRESENTE_SEM_JOGAR') return;
     const eventTeam = player.team === 'A' ? 'A' : 'B';
-    setEvents((list) => [...list, { userId: player.userId, relatedUserId: null, eventType: quickEventType, minute, team: eventTeam }]);
+    const eventMinute = match.status === 'CONFIRMED' ? minute : Math.max(0, Math.floor(clockRef.current.clockSeconds / 60));
+    setEvents((list) => [...list, { userId: player.userId, relatedUserId: null, eventType: quickEventType, minute: eventMinute, team: eventTeam, occurredAt: new Date().toISOString() }]);
     if (quickEventType === 'GOL') {
       if (eventTeam === 'A') setTeamAScore((value) => value + 1);
       if (eventTeam === 'B') setTeamBScore((value) => value + 1);
@@ -734,6 +742,14 @@ function MatchScoreEditor({ api, match, users, clockSeconds, clockRunning, onSav
       if (eventTeam === 'A') setTeamBScore((value) => value + 1);
       if (eventTeam === 'B') setTeamAScore((value) => value + 1);
     }
+  }
+
+  function confirmQuickEvent() {
+    if (!pendingQuickEvent) return;
+    const player = playablePlayers.find((item) => item.userId === pendingQuickEvent.userId);
+    if (!player) return;
+    addQuickEvent(player, pendingQuickEvent.eventType);
+    setPendingQuickEvent(null);
   }
 
   async function submit() {
@@ -750,37 +766,50 @@ function MatchScoreEditor({ api, match, users, clockSeconds, clockRunning, onSav
   const selectedEventPlayer = match.players.find((player) => player.userId === userId);
   const playablePlayers = match.players.filter((player) => player.team !== 'PRESENTE_SEM_JOGAR');
   const relatedPlayers = playablePlayers.filter((player) => player.userId !== userId && player.team === selectedEventPlayer?.team);
+  const eventLog = [
+    ...(match.startedAt ? [{ key: 'start', at: match.startedAt, label: 'Início do jogo', detail: 'Cronômetro oficial iniciado' }] : []),
+    ...events.map((item, index) => {
+      const player = match.players.find((current) => current.userId === item.userId);
+      return { key: `${item.userId}-${item.eventType}-${index}`, at: item.occurredAt ?? item.createdAt ?? null, label: eventLabel(item.eventType), detail: `${player?.name ?? 'Atleta'} • ${item.minute}' • Time ${item.team ?? '—'}` };
+    }),
+    ...((match.endedAt || match.status === 'SUBMITTED' || match.status === 'CONFIRMED') ? [{ key: 'end', at: match.endedAt ?? null, label: 'Final do jogo', detail: match.endedAt ? 'Súmula encerrada' : 'Será registrado ao submeter' }] : [])
+  ].sort((left, right) => {
+    const leftTime = left.at ? new Date(left.at).getTime() : Number.MAX_SAFE_INTEGER;
+    const rightTime = right.at ? new Date(right.at).getTime() : Number.MAX_SAFE_INTEGER;
+    return leftTime - rightTime;
+  });
 
   return (
     <div className="score-editor">
       <strong>{match.status === 'CONFIRMED' ? 'Correção auditada da súmula' : 'Fechamento da súmula'}</strong>
       {match.status !== 'CONFIRMED' && <p className="muted">{autosaveStatus}</p>}
       <div className="quick-sheet">
-        <strong>Lançamento rápido por atleta</strong>
-        <small className="muted">G gol • A assistência • CA amarelo • AZ azul • CV vermelho • GC gol contra para o adversário.</small>
+        <strong>Atletas em jogo</strong>
+        <small className="muted">Clique no ícone do evento e confirme. O horário real do clique entra no log da súmula.</small>
         {(['A', 'B'] as const).map((team) => (
           <div className="quick-team" key={team}>
             <b>{team === 'A' ? match.teamAName : match.teamBName}</b>
             {playablePlayers.filter((player) => player.team === team).length === 0 && <small className="muted">Nenhum atleta escalado neste time.</small>}
             {playablePlayers.filter((player) => player.team === team).map((player) => (
-              <div className="quick-player" key={player.userId}>
+              <div className={`quick-player ${pendingQuickEvent?.userId === player.userId ? 'confirming' : ''}`} key={player.userId}>
                 <span>{player.name}</span>
-                <div>
-                  <button type="button" onClick={() => addQuickEvent(player, 'GOL')}>G</button>
-                  <button type="button" onClick={() => addQuickEvent(player, 'ASSISTENCIA')}>A</button>
-                  <button type="button" onClick={() => addQuickEvent(player, 'CARTAO_AMARELO')}>CA</button>
-                  <button type="button" onClick={() => addQuickEvent(player, 'CARTAO_AZUL')}>AZ</button>
-                  <button type="button" onClick={() => addQuickEvent(player, 'CARTAO_VERMELHO')}>CV</button>
-                  <button type="button" onClick={() => addQuickEvent(player, 'GOL_CONTRA')}>GC</button>
+                <div className="quick-icons">
+                  <button type="button" title="Gol" onClick={() => setPendingQuickEvent({ userId: player.userId, eventType: 'GOL' })}>⚽</button>
+                  <button type="button" title="Assistência" onClick={() => setPendingQuickEvent({ userId: player.userId, eventType: 'ASSISTENCIA' })}>🅰️</button>
+                  <button type="button" title="Cartão amarelo" onClick={() => setPendingQuickEvent({ userId: player.userId, eventType: 'CARTAO_AMARELO' })}>🟨</button>
+                  <button type="button" title="Cartão azul" onClick={() => setPendingQuickEvent({ userId: player.userId, eventType: 'CARTAO_AZUL' })}>🟦</button>
+                  <button type="button" title="Cartão vermelho" onClick={() => setPendingQuickEvent({ userId: player.userId, eventType: 'CARTAO_VERMELHO' })}>🟥</button>
                 </div>
+                {pendingQuickEvent?.userId === player.userId && <div className="quick-confirm"><small>Confirmar {eventLabel(pendingQuickEvent.eventType)} para {player.name}?</small><button type="button" className="primary small" onClick={confirmQuickEvent}>Confirmar</button><button type="button" className="ghost" onClick={() => setPendingQuickEvent(null)}>Cancelar</button></div>}
               </div>
             ))}
           </div>
         ))}
       </div>
+      <div className="event-log"><strong>Log da súmula</strong>{eventLog.length === 0 ? <small className="muted">Sem eventos registrados ainda.</small> : eventLog.map((item) => <span key={item.key}><b>{formatBrasiliaClock(item.at)}</b><small>{item.label} • {item.detail}</small></span>)}</div>
       <div className="score-inputs"><input type="number" min="0" value={teamAScore} onChange={(event) => setTeamAScore(Number(event.target.value))} /><span>x</span><input type="number" min="0" value={teamBScore} onChange={(event) => setTeamBScore(Number(event.target.value))} /></div>
       {match.status === 'CONFIRMED' && <input value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} placeholder="Motivo da correção: gol/assistência/cartão lançado errado" required minLength={5} />}
-      <div className="event-form"><select value={eventType} onChange={(event) => setEventType(event.target.value as MatchEventDraft['eventType'])}><option value="GOL">Gol</option><option value="GOL_CONTRA">Gol contra</option><option value="ASSISTENCIA">Assistência</option><option value="CARTAO_AMARELO">Cartão amarelo</option><option value="CARTAO_VERMELHO">Cartão vermelho</option><option value="CARTAO_AZUL">Cartão azul</option></select><select value={userId} onChange={(event) => { setUserId(event.target.value); setRelatedUserId(''); }}>{playablePlayers.map((player) => <option key={player.userId} value={player.userId}>{player.name} • Time {player.team}</option>)}</select><select value={relatedUserId} onChange={(event) => setRelatedUserId(event.target.value)}><option value="">Sem relacionado</option>{relatedPlayers.map((player) => <option key={player.userId} value={player.userId}>{player.name}</option>)}</select><input type="number" min="0" max="180" value={minute} onChange={(event) => setMinute(Number(event.target.value))} /><span className="status open">Time {selectedEventPlayer?.team ?? '—'}</span><button type="button" className="ghost" onClick={addEvent}>Adicionar</button></div>
+      <details className="advanced-score"><summary>Lançamento manual avançado</summary><div className="event-form"><select value={eventType} onChange={(event) => setEventType(event.target.value as MatchEventDraft['eventType'])}><option value="GOL">Gol</option><option value="GOL_CONTRA">Gol contra</option><option value="ASSISTENCIA">Assistência</option><option value="CARTAO_AMARELO">Cartão amarelo</option><option value="CARTAO_VERMELHO">Cartão vermelho</option><option value="CARTAO_AZUL">Cartão azul</option></select><select value={userId} onChange={(event) => { setUserId(event.target.value); setRelatedUserId(''); }}>{playablePlayers.map((player) => <option key={player.userId} value={player.userId}>{player.name} • Time {player.team}</option>)}</select><select value={relatedUserId} onChange={(event) => setRelatedUserId(event.target.value)}><option value="">Sem relacionado</option>{relatedPlayers.map((player) => <option key={player.userId} value={player.userId}>{player.name}</option>)}</select><input type="number" min="0" max="180" value={minute} onChange={(event) => setMinute(Number(event.target.value))} /><span className="status open">Time {selectedEventPlayer?.team ?? '—'}</span><button type="button" className="ghost" onClick={addEvent}>Adicionar</button></div></details>
       <div className="chips">{events.map((item, index) => <button className="chip" key={`${item.userId}-${item.eventType}-${index}`} onClick={() => setEvents((list) => list.filter((_, itemIndex) => itemIndex !== index))}>{item.minute}' {eventLabel(item.eventType)}</button>)}</div>
       <div className="actions"><button className="primary" onClick={submit} disabled={match.status === 'CONFIRMED' && correctionReason.trim().length < 5}>{match.status === 'CONFIRMED' ? 'Salvar correção' : 'Submeter'}</button>{match.status === 'SUBMITTED' && <button className="ghost" onClick={confirm}>Confirmar e pontuar</button>}</div>
     </div>

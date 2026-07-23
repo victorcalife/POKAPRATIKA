@@ -29,7 +29,7 @@ const createMatchSchema = z.object({
 });
 const lineupSchema = createMatchSchema.omit({ seasonId: true }).partial({ matchDate: true, title: true, teamAName: true, teamBName: true }).extend({ players: z.array(playerSchema).default([]) });
 
-const eventSchema = z.object({ userId: z.string().uuid(), relatedUserId: z.string().uuid().nullable().optional(), eventType: z.enum(['GOL', 'GOL_CONTRA', 'ASSISTENCIA', 'CARTAO_AMARELO', 'CARTAO_VERMELHO', 'CARTAO_AZUL']), minute: z.number().int().min(0).max(180), team: z.enum(['A', 'B']) });
+const eventSchema = z.object({ userId: z.string().uuid(), relatedUserId: z.string().uuid().nullable().optional(), eventType: z.enum(['GOL', 'GOL_CONTRA', 'ASSISTENCIA', 'CARTAO_AMARELO', 'CARTAO_VERMELHO', 'CARTAO_AZUL']), minute: z.number().int().min(0).max(180), team: z.enum(['A', 'B']), occurredAt: z.string().datetime().nullable().optional() });
 const scoreSchema = z.object({ teamAScore: z.number().int().min(0), teamBScore: z.number().int().min(0), events: z.array(eventSchema).default([]) });
 const correctionSchema = scoreSchema.extend({ reason: z.string().min(5).max(500) });
 const draftSchema = scoreSchema.extend({ clockSeconds: z.number().int().min(0).max(10800).default(0), clockRunning: z.boolean().default(false) });
@@ -318,7 +318,7 @@ matchesRouter.get('/:id', asyncHandler(async (req, res) => {
      WHERE mp.match_id = $1 ORDER BY mp.team, mp.role_in_match, mp.rotation_order NULLS LAST, u.name`,
     [params.id]
   );
-  const events = await query('SELECT id, user_id AS "userId", related_user_id AS "relatedUserId", event_type AS "eventType", minute, team FROM match_events WHERE match_id = $1 ORDER BY minute ASC, created_at ASC', [params.id]);
+  const events = await query('SELECT id, user_id AS "userId", related_user_id AS "relatedUserId", event_type AS "eventType", minute, team, created_at AS "createdAt" FROM match_events WHERE match_id = $1 ORDER BY minute ASC, created_at ASC', [params.id]);
   const corrections = await tableExists('match_corrections')
     ? await query(
       `SELECT mc.id, mc.reason, mc.previous_team_a_score AS "previousTeamAScore", mc.previous_team_b_score AS "previousTeamBScore",
@@ -392,7 +392,7 @@ matchesRouter.post('/:id/submit', requireRoles('ADMIN', 'COORDENADOR'), asyncHan
   await validateScoreSheet(req.params.id, body);
   await query('DELETE FROM match_events WHERE match_id = $1', [req.params.id]);
   for (const event of body.events ?? []) {
-    await query('INSERT INTO match_events (match_id, user_id, related_user_id, event_type, minute, team) VALUES ($1, $2, $3, $4, $5, $6)', [req.params.id, event.userId, event.relatedUserId ?? null, event.eventType, event.minute, event.team ?? null]);
+    await query('INSERT INTO match_events (match_id, user_id, related_user_id, event_type, minute, team, created_at) VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::TIMESTAMPTZ, now()))', [req.params.id, event.userId, event.relatedUserId ?? null, event.eventType, event.minute, event.team ?? null, event.occurredAt ?? null]);
   }
   const result = await query(
     `UPDATE matches SET status = 'SUBMITTED', team_a_score = $2, team_b_score = $3,
@@ -428,7 +428,7 @@ matchesRouter.post('/:id/correct', requireRoles('ADMIN', 'COORDENADOR'), asyncHa
   const match = await query<{ team_a_score: number; team_b_score: number; status: string }>('SELECT team_a_score, team_b_score, status FROM matches WHERE id = $1', [req.params.id]);
   if (match.rows[0].status !== 'CONFIRMED') throw httpError(409, 'Correção auditada é exclusiva para súmulas já confirmadas.');
 
-  const previousEvents = await query('SELECT user_id, related_user_id, event_type, minute, team FROM match_events WHERE match_id = $1 ORDER BY minute ASC, created_at ASC', [req.params.id]);
+  const previousEvents = await query('SELECT user_id, related_user_id, event_type, minute, team, created_at AS "createdAt" FROM match_events WHERE match_id = $1 ORDER BY minute ASC, created_at ASC', [req.params.id]);
   await query(
     `INSERT INTO match_corrections (match_id, corrected_by, reason, previous_team_a_score, previous_team_b_score, new_team_a_score, new_team_b_score, previous_events, new_events)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::JSONB, $9::JSONB)`,
@@ -437,7 +437,7 @@ matchesRouter.post('/:id/correct', requireRoles('ADMIN', 'COORDENADOR'), asyncHa
 
   await query('DELETE FROM match_events WHERE match_id = $1', [req.params.id]);
   for (const event of body.events) {
-    await query('INSERT INTO match_events (match_id, user_id, related_user_id, event_type, minute, team) VALUES ($1, $2, $3, $4, $5, $6)', [req.params.id, event.userId, event.relatedUserId ?? null, event.eventType, event.minute, event.team]);
+    await query('INSERT INTO match_events (match_id, user_id, related_user_id, event_type, minute, team, created_at) VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::TIMESTAMPTZ, now()))', [req.params.id, event.userId, event.relatedUserId ?? null, event.eventType, event.minute, event.team, event.occurredAt ?? null]);
   }
   await query('DELETE FROM athlete_suspensions WHERE trigger_match_id = $1', [req.params.id]);
   await query('UPDATE matches SET team_a_score = $2, team_b_score = $3, updated_at = now() WHERE id = $1', [req.params.id, body.teamAScore, body.teamBScore]);
