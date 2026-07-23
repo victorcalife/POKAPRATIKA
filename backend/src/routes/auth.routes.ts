@@ -13,6 +13,7 @@ const loginSchema = z.object({ email: z.string().email(), password: z.string().m
 const bootstrapSchema = z.object({ name: z.string().min(2), email: z.string().email(), password: z.string().min(8) });
 const forgotSchema = z.object({ email: z.string().email() });
 const resetSchema = z.object({ token: z.string().min(30), password: z.string().min(8) });
+const changePasswordSchema = z.object({ currentPassword: z.string().min(1), newPassword: z.string().min(8).max(128) });
 const profileSchema = z.object({ name: z.string().min(2).optional(), email: z.string().email().optional(), avatarDataUrl: z.string().max(900000).nullable().optional() });
 
 authRouter.post('/bootstrap-admin', asyncHandler(async (req, res) => {
@@ -61,6 +62,19 @@ authRouter.patch('/me', requireAuth, asyncHandler(async (req: AuthRequest, res) 
   );
   if (!result.rowCount) throw httpError(404, 'Usuário autenticado não encontrado.');
   res.json(result.rows[0]);
+}));
+
+authRouter.post('/change-password', requireAuth, asyncHandler(async (req: AuthRequest, res) => {
+  const body = validate(changePasswordSchema, req.body);
+  const result = await query<{ id: string; password_hash: string }>('SELECT id, password_hash FROM users WHERE id = $1 AND active = TRUE', [req.user?.id]);
+  const user = result.rows[0];
+  if (!user) throw httpError(404, 'Usuário autenticado não encontrado.');
+  if (!await verifyPassword(body.currentPassword, user.password_hash)) throw httpError(401, 'Senha atual inválida.');
+  if (await verifyPassword(body.newPassword, user.password_hash)) throw httpError(400, 'A nova senha precisa ser diferente da senha atual.');
+
+  await query('UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1', [user.id, await hashPassword(body.newPassword)]);
+  await query('UPDATE password_reset_tokens SET used_at = now() WHERE user_id = $1 AND used_at IS NULL', [user.id]);
+  res.json({ ok: true, message: 'Senha alterada com segurança.' });
 }));
 
 authRouter.post('/forgot-password', asyncHandler(async (req, res) => {

@@ -49,7 +49,7 @@
   <path d="M132 382C173 402 214 412 256 412C298 412 339 402 380 382" stroke="#DBEAFE" stroke-width="10" stroke-linecap="round" opacity="0.84"/>
   <path d="M155 407C188 421 222 428 256 428C290 428 324 421 357 407" stroke="#DBEAFE" stroke-width="7" stroke-linecap="round" opacity="0.5"/>
 
-  <text x="256" y="88" text-anchor="middle" font-family="Arial Black, Impact, sans-serif" font-size="40" fill="#F5FBF7" letter-spacing="1">POKA</text>
-  <text x="256" y="124" text-anchor="middle" font-family="Arial Black, Impact, sans-serif" font-size="32" fill="#F5FBF7" letter-spacing="1">PRÁTIKA</text>
+  <text x="256" y="86" text-anchor="middle" font-family="Arial Black, Impact, sans-serif" font-size="46" fill="#F5FBF7" letter-spacing="1">POKA</text>
+  <text x="256" y="130" text-anchor="middle" font-family="Arial Black, Impact, sans-serif" font-size="46" fill="#F5FBF7" letter-spacing="1">PRÁTIKA</text>
   <text x="256" y="482" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#BFDBFE" letter-spacing="2">BALNEÁRIO CAMBORIÚ • SC</text>
 </svg>

@@ -10,7 +10,7 @@ Foi criada a base full-stack do sistema POKA PRÁTIKA, seguindo o padrão TOIT/R
 - Backend Node.js/TypeScript com Express e PostgreSQL via `pg`, sem ORM.
 - Frontend React/Vite/TypeScript/Tailwind, mobile-first e interface compacta.
 - Frontend em produção usa Nginx com `docker-entrypoint.sh` para gerar `/runtime-config.js` a partir de `VITE_API_URL` no runtime Railway, evitando tela branca quando a variável existe no serviço mas não entrou no build Vite.
-- Identidade visual original criada em `frontend/src/assets/poka-pratika-logo.svg`, com tom cômico de futebol amador/perna de pau, referência a Balneário Camboriú/SC e paleta azul média aplicada ao escudo e aos elementos de destaque do sistema.
+- Identidade visual original criada em `frontend/src/assets/poka-pratika-logo.svg`, com tom cômico de futebol amador/perna de pau, referência a Balneário Camboriú/SC e paleta azul média aplicada ao escudo e aos elementos de destaque do sistema; no símbolo, `POKA` e `PRÁTIKA` usam o mesmo tamanho de fonte, ambos ampliados em 15% sobre o tamanho anterior de `POKA`.
 - Migrações SQL manuais em `migrations/01_core_schema.sql`, `migrations/02_pagamentos_vencimento_pontuacao.sql`, `migrations/03_saldo_inicial_temporada_excel.sql`, `migrations/04_posicoes_oficiais_atletas.sql`, `migrations/05_sumula_rascunho_operacional_autosave.sql`, `migrations/06_selecao_do_ano_7_votos.sql`, `migrations/07_eventos_gol_contra.sql`, `migrations/08_email_case_insensitive_unico.sql`, `migrations/09_reparo_schema_sumula_operacional.sql` e `migrations/10_correcoes_auditadas_sumula.sql`.
 - Sem criação de `.env` e sem hardcode de credenciais/URLs.
 - Backend valida obrigatoriamente `NODE_ENV=production`, `PORT=8080`, `DATABASE_URL`, `JWT_SECRET`, `ALLOWED_ORIGINS` e `FRONTEND_URL` no startup Railway.
@@ -38,6 +38,7 @@ Foi criada a base full-stack do sistema POKA PRÁTIKA, seguindo o padrão TOIT/R
 - Autenticação JWT e senha com bcrypt.
 - Login oficial por e-mail e senha.
 - Bootstrap seguro do primeiro admin quando o banco ainda não tem usuários.
+- Usuários autenticados podem trocar a própria senha em `/auth/change-password`, informando senha atual e nova senha; o backend valida bcrypt, impede reutilizar a senha atual, atualiza `password_hash` e invalida tokens pendentes de recuperação/ativação.
 - Cadastro de usuários por ADMIN/COORDENADOR pode ser feito sem senha inicial; nesse caso o sistema gera token seguro e envia e-mail de ativação pelo Microsoft Graph.
 - E-mail de ativação usa o assunto `POKA PRÁTIKA: ATIVE SEU CADASTRO`; recuperação usa `POKA PRÁTIKA: ALTERE SUA SENHA`.
 - CRUD base de usuários pelo ADMIN; COORDENADOR pode cadastrar atletas, mas não cria ADMIN/COORDENADOR.
@@ -78,14 +79,16 @@ Foi criada a base full-stack do sistema POKA PRÁTIKA, seguindo o padrão TOIT/R
 
 ### Frontend
 
-- Login, primeiro acesso e recuperação de senha.
+- Login e recuperação de senha; a opção visual `Primeiro acesso` foi removida da página de login para simplificar a experiência pública.
 - Inputs de senha usam `autocomplete` adequado (`current-password` e `new-password`), removendo o aviso do console do Chrome sem alterar regra de autenticação.
 - Login e header com logo/microcopy do POKA PRÁTIKA de Balneário Camboriú/SC.
+- Header autenticado expõe `Trocar senha` para ADMIN, COORDENADOR e ATLETA, abrindo modal responsiva com senha atual, nova senha e confirmação, chamando o backend real.
+- Header autenticado permite abrir o próprio perfil clicando no avatar/nome; perfis de terceiros são visualizados no mesmo modal sem edição de dados de outro usuário.
 - Dashboard de temporada, pontos corridos, rankings e suspensões.
 - Dashboard com pódio visual, KPIs compactos, rankings e estados vazios amigáveis.
 - Dashboard exibe classificação alinhada à planilha real: pontos, jogos, vitórias, empates, derrotas, presença sem jogar, mensalidade, gols da equipe, saldo e aproveitamento.
 - Rankings contemplam artilharia com gols contra/saldo/média, assistência com média, assiduidade com jogos+presença e cartões por pontos/total/média.
-- Aba de perfis com carreira acumulada de cada atleta/usuário em múltiplas temporadas.
+- A aba `perfis` foi removida; carreira acumulada de atleta/usuário agora abre em modal sobre fundo fumê transparente, acionado pelo avatar/nome do usuário no header ou por nomes clicáveis na classificação/rankings.
 - Lista de súmulas, criação com atletas por time/presença, ordem de sorteio, sequência, banco, cronômetro digital e fechamento por eventos.
 - Criação de súmula operacional com busca por nome/e-mail a partir de 3 caracteres, inclusão rápida no Time A, Time B ou presente sem jogar, e ordenação drag-and-drop da sequência de substituições.
 - Criação de súmula operacional permite montar uma lista de presença e acionar o balanceamento automático por posições, distribuindo `GO`, defesa/laterais, meio-campo e ataque entre Time A e Time B com diferença mínima por grupo.
@@ -99,20 +102,23 @@ Foi criada a base full-stack do sistema POKA PRÁTIKA, seguindo o padrão TOIT/R
 - Operação de jogo agora expõe início oficial da súmula, cancelamento seguro de súmulas não confirmadas, submissão, confirmação e correção auditada.
 - Cancelamento de súmula usa confirmação inline na interface, sem `window.confirm`, para UX mais consistente em celular.
 - Histórico de correções auditadas aparece no detalhe da súmula, evitando ajuste invisível de placar/eventos.
+- Modal operacional da súmula ganhou lançamento rápido por atleta: botões `G`, `A`, `CA`, `AZ`, `CV` e `GC` por jogador de cada time; `GC` mantém a regra de gol contra pontuar o adversário sem somar para artilharia do autor.
+- A criação de partida na temporada usa CTA claro `Criar jogo`; a lista de jogos ficou na home da temporada ativa como entrada visual discreta para abrir a súmula em modal fumê.
 - Exibição automática de roteiro de trocas conforme súmula tradicional.
 - Gestão de mensalidade com mês de referência, vencimento, data de pagamento, status e indicação de ponto antecipado.
-- Aba de mensalidades exibe KPIs financeiros, gera cobranças em lote, salva lançamentos individuais e exporta CSV.
+- Aba de mensalidades exibe KPIs financeiros, lista densa de cobranças, exportação CSV e ações operacionais em modais fumê: `Gerar mês` para atletas ativos e `Registrar pagamento` individual.
 - Votação de premiações sem `Vera Verão`, com apuração ADMIN e consolidação de winners/badges; `SELECAO_ANO` exibe formulário especial com 1 goleiro + 6 linhas.
 - Configurações de usuários e pontuação para ADMIN/COORDENADOR, com criação de perfis privilegiados restrita ao ADMIN.
-- ADMIN consegue editar cadastro completo de usuários, redefinir senha e reenviar convite de ativação pela interface.
-- ADMIN configura categorias de premiação na aba `premios`, controlando nomes e votação habilitada.
+- ADMIN consegue editar cadastro completo de usuários, redefinir senha e reenviar convite de ativação pela interface; a edição de usuário agora abre em modal individual para não poluir a lista operacional.
+- ADMIN configura categorias de premiação na aba `premios` através de modal fumê, controlando nomes e votação habilitada sem poluir a tela principal de votação/apuração.
 - Classificação geral e mensalidades têm exportação CSV operacional.
-- Painel administrativo expõe criação, início e encerramento de temporadas, eliminando dependência de chamada manual de endpoint.
+- Painel administrativo `config.` foi reorganizado como home operacional com cards de ação e modais fumê para criar temporada, editar pontuação, criar usuário e importar Excel, mantendo listas densas de temporadas e usuários na tela principal.
 - ADMIN pode editar perfil, posição oficial e status ativo/inativo de usuários; COORDENADOR mantém criação operacional de atletas sem elevação indevida de privilégio.
 - Suspensões abertas podem ser marcadas como cumpridas na temporada a partir de uma partida confirmada.
 - Painel administrativo permite colar a tabela atual do Excel com cabeçalho e importar o saldo inicial da temporada, retornando linhas importadas e linhas ignoradas para revisão.
 - O formulário antigo de criação de súmula foi removido; existe apenas o fluxo operacional com busca e drag-and-drop.
 - UI refinada com logo original azul, palavra `PRÁTIKA` abaixo de `POKA` no símbolo, pódios, cards, microcopy cômica, modais roláveis, listas suspensas com opções em fonte preta e layout compacto/mobile-first com line-height global reduzido em 10%.
+- A navegação avançou para o padrão painel principal + modais fumê em todos os módulos principais: jogos/súmulas aparecem como relatório na temporada ativa, operação da partida abre em modal amplo, mensalidades usam modais para geração/registro, prêmios usam modal para configuração administrativa e `config.` usa modais para ações sensíveis.
 
 ## Regras importantes consolidadas
 
@@ -140,8 +146,15 @@ Foi criada a base full-stack do sistema POKA PRÁTIKA, seguindo o padrão TOIT/R
 - `backend`: `npm run typecheck`, `npm run build` e `npm audit --audit-level=moderate` concluídos com sucesso após hardening P1.
 - `backend`: `npm run typecheck` e `npm run build` concluídos com sucesso após criação da migration `10` e blindagem do `GET /matches/:id` contra ausência temporária de `match_corrections`.
 - `backend`: `npm run typecheck` e `npm run build` concluídos com sucesso após corrigir a sintaxe PostgreSQL do cálculo de `availableMinutes` em `/matches/:id`.
+- `backend`: `npm run typecheck` e `npm run build` concluídos com sucesso após adicionar `/auth/change-password`.
 - `frontend`: `npm run typecheck`, `npm run build` e `npm audit --audit-level=moderate` concluídos com sucesso após ajustes de árbitro, responsividade e runtime config Railway.
 - `frontend`: `npm run typecheck` e `npm run build` concluídos com sucesso após adicionar `autocomplete` nos inputs de senha.
+- `frontend`: `npm run typecheck` e `npm run build` concluídos com sucesso após remover `Primeiro acesso` do login, centralizar o card e adicionar a modal `Trocar senha`.
+- `frontend`: `npm run typecheck` e `npm run build` concluídos com sucesso após remover a aba `perfis`, criar o modal global de perfil e tornar nomes de atletas da classificação/rankings clicáveis.
+- `frontend`: `npm run typecheck` e `npm run build` concluídos com sucesso após integrar jogos na tela da temporada, mover o detalhe da súmula para modal fumê operacional, renderizar lançamento rápido por atleta, ajustar microcopy de criação de jogo e ajustar o logo `POKA PRÁTIKA`.
+- `frontend`: `npm run typecheck` e `npm run build` concluídos com sucesso após migrar mensalidades para dashboard com modais de geração/registro e mover configurações de prêmios para modal fumê.
+- `frontend`: `npm run typecheck` e `npm run build` concluídos com sucesso após reorganizar `config.` em home administrativa com modais para temporada, pontuação, usuário, importação Excel e edição individual de usuários.
+- `backend`: `npm run typecheck` e `npm run build` concluídos com sucesso após a reforma final de UI para validar o conjunto full-stack antes da homologação.
 - `backend`: `npm audit --audit-level=moderate` sem vulnerabilidades.
 - `frontend`: `npm audit --audit-level=moderate` sem vulnerabilidades.
 - Checagem do workspace sem erros ativos, sem `.env`, sem ORM operacional e sem `console.log`/`window.confirm`/`alert` operacional.
@@ -152,8 +165,9 @@ Foi criada a base full-stack do sistema POKA PRÁTIKA, seguindo o padrão TOIT/R
 2. Em banco já existente, executar até `migrations/10_correcoes_auditadas_sumula.sql`, garantindo também `04`, `05`, `06`, `07`, `08` e `09` se ainda não tiverem sido aplicadas.
 3. Subir backend e frontend na Railway com root directories corretos; para o erro atual de abertura de súmula, redeploy do backend é obrigatório porque a correção está no SQL da rota `/matches/:id`.
 4. Conferir variáveis Railway: backend com `DATABASE_URL`, `NODE_ENV=production`, `PORT=8080`, `JWT_SECRET`, `ALLOWED_ORIGINS`, `FRONTEND_URL` e credenciais Microsoft Graph; frontend com `VITE_API_URL`.
-5. Usar a tela de primeiro acesso para criar o primeiro ADMIN.
+5. Garantir que já exista pelo menos um ADMIN ativo; em banco totalmente novo, usar o bootstrap seguro do backend de forma controlada antes de liberar o acesso público.
 6. Cadastrar atletas reais por e-mail e deixar o sistema enviar o convite de ativação via Microsoft Graph.
 7. Criar/abrir a temporada 2026 pelo painel `config.`.
 8. Importar a tabela atual do Excel no painel administrativo usando preferencialmente a coluna `email` para casar cada linha com o usuário certo.
 9. Conferir classificação, rankings, suspensões e cartões; depois usar apenas as novas súmulas confirmadas/corrigidas para continuidade da temporada.
+10. Próxima etapa técnica: redeploy na Railway, executar as migrations pendentes no PostgreSQL em ordem e homologar os fluxos reais de aceite: login, trocar senha, criar jogo, iniciar súmula, lançar eventos rápidos, confirmar pontuação, registrar mensalidade, votar prêmios e operar `config.`.
