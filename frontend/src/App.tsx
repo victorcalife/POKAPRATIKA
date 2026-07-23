@@ -287,7 +287,7 @@ function PasswordTokenScreen({ mode }: { mode: 'activation' | 'reset' }) {
     }
   }
 
-  return <main className="login-wrap"><form className="login-card card" onSubmit={submit}><img className="login-logo" src={logoUrl} alt="Escudo POKA PRÁTIKA" /><p className="eyebrow">POKA PRÁTIKA • acesso seguro</p><h1>{mode === 'activation' ? 'Ativar cadastro' : 'Alterar senha'}</h1><p className="muted">Defina uma senha com pelo menos 8 caracteres. O login será sempre pelo seu e-mail.</p><input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Nova senha" type="password" required minLength={8} disabled={done} /><input value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Confirmar senha" type="password" required minLength={8} disabled={done} /><button className="primary" disabled={done}>{done ? 'Senha salva' : 'Salvar senha'}</button>{message && <p className="muted">{message}</p>}{done && <button type="button" className="ghost" onClick={() => { window.history.replaceState({}, '', '/'); window.location.reload(); }}>Ir para login</button>}</form></main>;
+  return <main className="login-wrap"><form className="login-card card" onSubmit={submit}><img className="login-logo" src={logoUrl} alt="Escudo POKA PRÁTIKA" /><p className="eyebrow">POKA PRÁTIKA • acesso seguro</p><h1>{mode === 'activation' ? 'Ativar cadastro' : 'Alterar senha'}</h1><p className="muted">Defina uma senha com pelo menos 8 caracteres. O login será sempre pelo seu e-mail.</p><input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Nova senha" type="password" autoComplete="new-password" required minLength={8} disabled={done} /><input value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Confirmar senha" type="password" autoComplete="new-password" required minLength={8} disabled={done} /><button className="primary" disabled={done}>{done ? 'Senha salva' : 'Salvar senha'}</button>{message && <p className="muted">{message}</p>}{done && <button type="button" className="ghost" onClick={() => { window.history.replaceState({}, '', '/'); window.location.reload(); }}>Ir para login</button>}</form></main>;
 }
 
 function LoginScreen({ onAuth }: { onAuth: (payload: AuthPayload) => void }) {
@@ -324,7 +324,7 @@ function LoginScreen({ onAuth }: { onAuth: (payload: AuthPayload) => void }) {
         <p className="muted">O sistema oficial de quem talvez erre o domínio, mas nunca falta na quarta.</p>
         {mode === 'bootstrap' && <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Nome do admin" required />}
         <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="E-mail" type="email" required />
-        {mode !== 'forgot' && <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Senha" type="password" required minLength={8} />}
+        {mode !== 'forgot' && <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Senha" type="password" autoComplete={mode === 'bootstrap' ? 'new-password' : 'current-password'} required minLength={8} />}
         <button className="primary">{mode === 'forgot' ? 'Enviar recuperação' : 'Acessar'}</button>
         {message && <p className="muted">{message}</p>}
         <div className="login-actions">

@@ -296,7 +296,17 @@ matchesRouter.get('/:id', asyncHandler(async (req, res) => {
       TIME '20:00' AS "scheduledStart", TIME '21:00' AS "scheduledEnd", started_at AS "startedAt", ended_at AS "endedAt",
       team_a_name AS "teamAName", team_b_name AS "teamBName", team_a_score AS "teamAScore", team_b_score AS "teamBScore",
       ${draftSelect.join(', ')},
-      GREATEST(1, FLOOR(EXTRACT(EPOCH FROM ((((match_date + TIME '21:00') AT TIME ZONE 'America/Sao_Paulo') - COALESCE(started_at, ((match_date + TIME '20:00') AT TIME ZONE 'America/Sao_Paulo')))) / 60))::INTEGER AS "availableMinutes"
+      GREATEST(
+        1,
+        FLOOR(
+          EXTRACT(
+            EPOCH FROM (
+              ((match_date + TIME '21:00') AT TIME ZONE 'America/Sao_Paulo')
+              - COALESCE(started_at, ((match_date + TIME '20:00') AT TIME ZONE 'America/Sao_Paulo'))
+            )
+          ) / 60
+        )
+      )::INTEGER AS "availableMinutes"
      FROM matches WHERE id = $1`,
     [params.id]
   );

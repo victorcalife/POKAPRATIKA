@@ -49,6 +49,7 @@ Foi criada a base full-stack do sistema POKA PRÁTIKA, seguindo o padrão TOIT/R
 - Endpoint de carreira do atleta consolida estatísticas, temporadas, títulos, badges e suspensões.
 - Súmulas: criar, iniciar, submeter, confirmar, registrar eventos e cálculo de trocas.
 - Detalhe de súmula `DRAFT` vazia foi endurecido para abrir sem atletas/eventos, sem depender de `scheduled_start/scheduled_end` e sem quebrar caso `match_corrections` ainda não exista; bancos existentes devem executar a migration `09` para autosave operacional e a migration `10` para histórico auditável de correções.
+- O `GET /matches/:id` teve o cálculo de `availableMinutes` reescrito para sintaxe PostgreSQL explícita (`EXTRACT(EPOCH FROM (...)) / 60`), corrigindo o erro Railway `syntax error at or near "AS"` que retornava `500` ao abrir a súmula.
 - Súmulas existentes em `DRAFT`, `RUNNING` ou `SUBMITTED` podem ter árbitro, data, times e escalação reabertos e editados pela interface, persistindo em `/matches/:id/lineup` e recalculando roteiro de trocas após salvar.
 - Início oficial da partida pelo botão `Jogo iniciado`, persistindo `started_at` com o instante real do clique no PostgreSQL e exibindo em horário de Brasília.
 - Tempo de jogo e cadência de substituições respeitam a janela fixa da quadra: aluguel das 20:00 às 21:00, mas se o jogo iniciar atrasado o tempo útil passa a ser apenas o intervalo entre `started_at` e 21:00.
@@ -78,6 +79,7 @@ Foi criada a base full-stack do sistema POKA PRÁTIKA, seguindo o padrão TOIT/R
 ### Frontend
 
 - Login, primeiro acesso e recuperação de senha.
+- Inputs de senha usam `autocomplete` adequado (`current-password` e `new-password`), removendo o aviso do console do Chrome sem alterar regra de autenticação.
 - Login e header com logo/microcopy do POKA PRÁTIKA de Balneário Camboriú/SC.
 - Dashboard de temporada, pontos corridos, rankings e suspensões.
 - Dashboard com pódio visual, KPIs compactos, rankings e estados vazios amigáveis.
@@ -137,7 +139,9 @@ Foi criada a base full-stack do sistema POKA PRÁTIKA, seguindo o padrão TOIT/R
 
 - `backend`: `npm run typecheck`, `npm run build` e `npm audit --audit-level=moderate` concluídos com sucesso após hardening P1.
 - `backend`: `npm run typecheck` e `npm run build` concluídos com sucesso após criação da migration `10` e blindagem do `GET /matches/:id` contra ausência temporária de `match_corrections`.
+- `backend`: `npm run typecheck` e `npm run build` concluídos com sucesso após corrigir a sintaxe PostgreSQL do cálculo de `availableMinutes` em `/matches/:id`.
 - `frontend`: `npm run typecheck`, `npm run build` e `npm audit --audit-level=moderate` concluídos com sucesso após ajustes de árbitro, responsividade e runtime config Railway.
+- `frontend`: `npm run typecheck` e `npm run build` concluídos com sucesso após adicionar `autocomplete` nos inputs de senha.
 - `backend`: `npm audit --audit-level=moderate` sem vulnerabilidades.
 - `frontend`: `npm audit --audit-level=moderate` sem vulnerabilidades.
 - Checagem do workspace sem erros ativos, sem `.env`, sem ORM operacional e sem `console.log`/`window.confirm`/`alert` operacional.
@@ -146,7 +150,7 @@ Foi criada a base full-stack do sistema POKA PRÁTIKA, seguindo o padrão TOIT/R
 
 1. Em banco novo, executar `migrations/01_core_schema.sql` e depois as migrações incrementais aplicáveis em ordem crescente.
 2. Em banco já existente, executar até `migrations/10_correcoes_auditadas_sumula.sql`, garantindo também `04`, `05`, `06`, `07`, `08` e `09` se ainda não tiverem sido aplicadas.
-3. Subir backend e frontend na Railway com root directories corretos.
+3. Subir backend e frontend na Railway com root directories corretos; para o erro atual de abertura de súmula, redeploy do backend é obrigatório porque a correção está no SQL da rota `/matches/:id`.
 4. Conferir variáveis Railway: backend com `DATABASE_URL`, `NODE_ENV=production`, `PORT=8080`, `JWT_SECRET`, `ALLOWED_ORIGINS`, `FRONTEND_URL` e credenciais Microsoft Graph; frontend com `VITE_API_URL`.
 5. Usar a tela de primeiro acesso para criar o primeiro ADMIN.
 6. Cadastrar atletas reais por e-mail e deixar o sistema enviar o convite de ativação via Microsoft Graph.
