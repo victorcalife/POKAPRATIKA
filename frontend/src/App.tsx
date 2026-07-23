@@ -1,5 +1,4 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { ApiClient } from './api';
 import logoUrl from './assets/poka-pratika-logo.svg';
 import { AthletePosition, MatchListItem, PointSetting, Season, Standing, User } from './types';
@@ -179,6 +178,7 @@ export function App() {
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
   const [awardSettingsOpen, setAwardSettingsOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const canCoordinate = auth?.user.role === 'ADMIN' || auth?.user.role === 'COORDENADOR';
   const isAdmin = auth?.user.role === 'ADMIN';
   const activeSeason = seasons.find((season) => season.id === activeSeasonId) ?? seasons.find((season) => season.status === 'OPEN') ?? seasons[0];
@@ -262,21 +262,20 @@ export function App() {
         <div className="brand-lockup">
           <img className="brand-logo" src={logoUrl} alt="Escudo POKA PRÁTIKA" />
           <div>
-            <p className="eyebrow">Balneário Camboriú / SC • Quarta 20h</p>
+            <p className="eyebrow">Balneário Camboriú • Quarta 20h</p>
             <h1>POKA PRÁTIKA</h1>
-            <p className="muted">Pouca técnica, muita resenha: súmula, mensalidade, ranking e premiação sem Excel no pós-jogo.</p>
           </div>
         </div>
-        <div className="profile-pill">
-          <button className="profile-trigger" onClick={() => setProfileUserId(auth.user.id)} title="Abrir perfil">
+        <div className="profile-pill account-area">
+          <button className="profile-trigger" onClick={() => canCoordinate ? setAccountMenuOpen((value) => !value) : setProfileUserId(auth.user.id)} title={canCoordinate ? 'Abrir menu' : 'Abrir perfil'}>
             {auth.user.avatarDataUrl ? <img src={auth.user.avatarDataUrl} alt="Avatar" /> : <span>{auth.user.name.slice(0, 1)}</span>}
             <div>
               <strong>{auth.user.name}</strong>
-              <small>{auth.user.role}</small>
+              <small>{canCoordinate ? `${auth.user.role} • menu` : `${auth.user.role} • perfil`}</small>
             </div>
           </button>
-          <button className="ghost" onClick={() => setChangePasswordOpen(true)}>Trocar senha</button>
-          <button className="ghost" onClick={() => { localStorage.removeItem(storageKey); setAuth(null); }}>Sair</button>
+          {!canCoordinate && <button className="ghost" onClick={() => { localStorage.removeItem(storageKey); setAuth(null); }}>Sair</button>}
+          {canCoordinate && accountMenuOpen && <div className="account-menu"><button onClick={() => { setView('temporada'); setAccountMenuOpen(false); }}>Temporada</button><button onClick={() => { setView('pagamentos'); setAccountMenuOpen(false); }}>Mensalidades</button><button onClick={() => { setView('premios'); setAccountMenuOpen(false); }}>Prêmios</button><button onClick={() => { setView('admin'); setAccountMenuOpen(false); }}>Config.</button><button onClick={() => { setProfileUserId(auth.user.id); setAccountMenuOpen(false); }}>Meu perfil</button><button onClick={() => { setChangePasswordOpen(true); setAccountMenuOpen(false); }}>Trocar senha</button><button className="danger-menu" onClick={() => { localStorage.removeItem(storageKey); setAuth(null); }}>Sair</button></div>}
         </div>
       </header>
 
@@ -286,12 +285,6 @@ export function App() {
       {error && <button className="alert" onClick={() => setError('')}>{error}</button>}
       {loading && <div className="mini-loading">Carregando dados reais da Railway...</div>}
 
-      <nav className="tabs">
-        {(['temporada', 'pagamentos', 'premios', 'admin'] as View[]).filter((item) => item !== 'admin' || canCoordinate).map((item) => (
-          <button key={item} className={view === item ? 'active' : ''} onClick={() => setView(item)}>{item === 'admin' ? 'config.' : item}</button>
-        ))}
-      </nav>
-
       <section className="context-row">
         <select value={activeSeasonId} onChange={(event) => setActiveSeasonId(event.target.value)}>
           {seasons.map((season) => <option key={season.id} value={season.id}>{season.name} • {season.status}</option>)}
@@ -300,7 +293,7 @@ export function App() {
         {suspensions.length > 0 && <span className="status danger">{suspensions.length} suspensão(ões)</span>}
       </section>
 
-        {view === 'temporada' && <div className="home-stack"><SeasonPanel api={api} standings={standings} rankings={rankings} suspensions={suspensions} matches={matches} canCoordinate={canCoordinate} onReload={loadData} onOpenProfile={setProfileUserId} /><MatchesPanel api={api} canCoordinate={canCoordinate} users={users} matches={matches} activeSeasonId={activeSeasonId} onReload={loadData} selectedMatch={selectedMatch} setSelectedMatch={setSelectedMatch} /></div>}
+        {view === 'temporada' && <div className="home-stack season-home"><SeasonPanel standings={standings} rankings={rankings} onOpenProfile={setProfileUserId} /><div className="season-lower"><MatchesPanel api={api} canCoordinate={canCoordinate} users={users} matches={matches} activeSeasonId={activeSeasonId} onReload={loadData} selectedMatch={selectedMatch} setSelectedMatch={setSelectedMatch} /><SuspensionsPanel api={api} suspensions={suspensions} matches={matches} canCoordinate={canCoordinate} onReload={loadData} /></div></div>}
       {view === 'pagamentos' && <PaymentsPanel api={api} canCoordinate={canCoordinate} users={users} activeSeasonId={activeSeasonId} />}
       {view === 'premios' && <div className="home-stack"><div className="card compact"><div className="card-head"><div><h2>Central de prêmios</h2><p className="muted">Votação, apuração e configurações seguem o padrão de ação em modal.</p></div>{isAdmin && <button className="primary small" onClick={() => setAwardSettingsOpen(true)}>Configurar prêmios</button>}</div></div><AwardsPanel api={api} users={users} activeSeason={activeSeason} isAdmin={isAdmin} /></div>}
       {view === 'admin' && canCoordinate && <AdminPanel api={api} users={users} seasons={seasons} points={points} activeSeasonId={activeSeasonId} onReload={loadData} isAdmin={isAdmin} />}
@@ -415,9 +408,30 @@ function ChangePasswordDialog({ api, onClose }: { api: ApiClient; onClose: () =>
   return <div className="modal"><form className="card modal-card password-card" onSubmit={submit}><div className="card-head"><h2>Trocar senha</h2><button type="button" className="ghost" onClick={onClose}>Fechar</button></div><p className="muted">Informe sua senha atual e defina uma nova senha com pelo menos 8 caracteres.</p><input value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} placeholder="Senha atual" type="password" autoComplete="current-password" required disabled={saving || saved} /><input value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="Nova senha" type="password" autoComplete="new-password" required minLength={8} disabled={saving || saved} /><input value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Confirmar nova senha" type="password" autoComplete="new-password" required minLength={8} disabled={saving || saved} /><button className="primary" disabled={saving || saved}>{saving ? 'Salvando...' : saved ? 'Senha alterada' : 'Salvar nova senha'}</button>{message && <p className="muted">{message}</p>}</form></div>;
 }
 
-function SeasonPanel({ api, standings, rankings, suspensions, matches, canCoordinate, onReload, onOpenProfile }: { api: ApiClient; standings: Standing[]; rankings: RankingPayload; suspensions: Suspension[]; matches: MatchListItem[]; canCoordinate: boolean; onReload: () => Promise<void>; onOpenProfile: (userId: string) => void }) {
-  const podium = standings.slice(0, 3);
-  const totals = standings.reduce((acc, row) => ({ points: acc.points + row.total_points, games: acc.games + row.games_played, goals: acc.goals + row.goals, assists: acc.assists + row.assists, presences: acc.presences + row.presences }), { points: 0, games: 0, goals: 0, assists: 0, presences: 0 });
+function SeasonPanel({ standings, rankings, onOpenProfile }: { standings: Standing[]; rankings: RankingPayload; onOpenProfile: (userId: string) => void }) {
+  const topScorer = rankings.goals[0];
+  const topAssistant = rankings.assists[0];
+  const topPresence = rankings.presence[0];
+  const topPoints = standings[0];
+  const topEfficiency = [...standings].filter((row) => row.games_played > 0).sort((left, right) => ((right.wins * 3 + right.draws) / (right.games_played * 3)) - ((left.wins * 3 + left.draws) / (left.games_played * 3)))[0];
+  const topTeamBalance = [...standings].sort((left, right) => right.team_goal_balance - left.team_goal_balance || right.team_goals_for - left.team_goals_for)[0];
+  const indicators = [
+    topScorer && { icon: '⚽', title: 'Artilheiro', userId: topScorer.userId, name: topScorer.name, value: topScorer.goals, suffix: 'gols', detail: `${topScorer.netGoals} saldo • ${topScorer.ownGoals} contra` },
+    topAssistant && { icon: '🅰️', title: 'Garçom', userId: topAssistant.userId, name: topAssistant.name, value: topAssistant.assists, suffix: 'assist.', detail: `${topAssistant.gamesPlayed} jogos • média ${formatAverage(topAssistant.average)}` },
+    topPresence && { icon: '📍', title: 'Mais assíduo', userId: topPresence.userId, name: topPresence.name, value: topPresence.total, suffix: 'pres.', detail: `${topPresence.gamesPlayed} jogos • ${formatAverage(topPresence.percentage)}%` },
+    topEfficiency && { icon: '📈', title: 'Melhor aproveitamento', userId: topEfficiency.user_id, name: topEfficiency.name, value: Math.round(topEfficiency.games_played ? ((topEfficiency.wins * 3 + topEfficiency.draws) / (topEfficiency.games_played * 3)) * 100 : 0), suffix: '%', detail: `V ${topEfficiency.wins} • E ${topEfficiency.draws} • D ${topEfficiency.losses}` },
+    topPoints && { icon: '🏆', title: 'Maior pontuador', userId: topPoints.user_id, name: topPoints.name, value: topPoints.total_points, suffix: 'pts', detail: `1º nos pontos corridos` },
+    topTeamBalance && { icon: '🥅', title: 'Melhor saldo equipe', userId: topTeamBalance.user_id, name: topTeamBalance.name, value: topTeamBalance.team_goal_balance, suffix: 'saldo', detail: `${topTeamBalance.team_goals_for} pró • ${topTeamBalance.team_goals_against} contra` }
+  ].filter(Boolean) as Array<{ icon: string; title: string; userId: string; name: string; value: number; suffix: string; detail: string }>;
+
+  return <section className="card compact standings-card"><div className="card-head championship-head"><div><h2>Tabela da temporada</h2><p className="muted">Classificação em largura total, estilo campeonato: clique no atleta para abrir o perfil.</p></div><button className="ghost" onClick={() => downloadCsv('poka-pratika-classificacao.csv', standings.map((row) => ({ posicao: row.position, atleta: row.name, pontos: row.total_points, jogos: row.games_played, vitorias: row.wins, empates: row.draws, derrotas: row.losses, presencasSemJogar: row.presences, mensalidades: row.paid_months, gols: row.goals, golsContra: row.own_goals, assistencias: row.assists, cartoes: row.total_cards, saldoEquipe: row.team_goal_balance })))}>Exportar CSV</button></div>{standings.length === 0 ? <EmptyState title="Temporada pronta para começar" text="Assim que a primeira súmula for confirmada, a tabela ganha vida." /> : <div className="championship-wrap"><table className="championship-table"><thead><tr><th>Pos</th><th>Atleta</th><th>PTS</th><th>J</th><th>V</th><th>E</th><th>D</th><th>PSJ</th><th>Mens.</th><th>GP</th><th>GC</th><th>SG</th><th>GF</th><th>GS</th><th>SE</th><th>APR</th><th>G</th><th>A</th><th>CAR</th></tr></thead><tbody>{standings.map((row) => <tr key={row.user_id}><td className="pos-cell">{row.position}</td><td className="athlete-cell"><button className="name-link strong" onClick={() => onOpenProfile(row.user_id)}>{row.name}</button></td><td className="points-cell">{row.total_points}</td><td>{row.games_played}</td><td>{row.wins}</td><td>{row.draws}</td><td>{row.losses}</td><td>{row.presences}</td><td>{row.paid_months}</td><td>{row.goals}</td><td>{row.own_goals}</td><td>{row.net_goals}</td><td>{row.team_goals_for}</td><td>{row.team_goals_against}</td><td>{row.team_goal_balance}</td><td>{formatPercent(row.games_played ? ((row.wins * 3 + row.draws) / (row.games_played * 3)) * 100 : 0)}</td><td>{row.goals}</td><td>{row.assists}</td><td>{row.total_cards}</td></tr>)}</tbody></table></div>}<div className="leader-strip">{indicators.length === 0 ? <EmptyState title="Indicadores aguardando jogos" text="Os líderes individuais aparecem aqui após as primeiras súmulas confirmadas." /> : indicators.map((item) => <article className="leader-card" key={item.title}><span className="leader-icon">{item.icon}</span><div><small>{item.title}</small><button className="name-link" onClick={() => onOpenProfile(item.userId)}>{item.name}</button><b>{item.value} {item.suffix}</b><em>{item.detail}</em></div></article>)}</div></section>;
+}
+
+function EmptyState({ title, text }: { title: string; text: string }) {
+  return <div className="empty-state"><strong>{title}</strong><span>{text}</span></div>;
+}
+
+function SuspensionsPanel({ api, suspensions, matches, canCoordinate, onReload }: { api: ApiClient; suspensions: Suspension[]; matches: MatchListItem[]; canCoordinate: boolean; onReload: () => Promise<void> }) {
   const confirmedMatches = matches.filter((match) => match.status === 'CONFIRMED');
 
   async function serveSuspension(id: string, servedMatchId: string) {
@@ -426,58 +440,7 @@ function SeasonPanel({ api, standings, rankings, suspensions, matches, canCoordi
     await onReload();
   }
 
-  return (
-    <div className="grid two">
-      <section className="card compact">
-        <div className="card-head"><h2>Pontos corridos</h2><button className="ghost" onClick={() => downloadCsv('poka-pratika-classificacao.csv', standings.map((row) => ({ posicao: row.position, atleta: row.name, pontos: row.total_points, jogos: row.games_played, vitorias: row.wins, empates: row.draws, derrotas: row.losses, presencasSemJogar: row.presences, mensalidades: row.paid_months, gols: row.goals, golsContra: row.own_goals, assistencias: row.assists, cartoes: row.total_cards, saldoEquipe: row.team_goal_balance })))}>Exportar CSV</button><span className="status open">{standings.length} atletas</span></div>
-        {podium.length > 0 ? <div className="podium">{podium.map((row, index) => <article className={`podium-card place-${index + 1}`} key={row.user_id}><span>{index === 0 ? '👑' : index === 1 ? '🥈' : '🥉'}</span><button className="name-link" onClick={() => onOpenProfile(row.user_id)}>{row.name}</button><small>{row.total_points} pts • {row.games_played} jogos • {row.presences} pres.</small></article>)}</div> : <EmptyState title="Temporada pronta para começar" text="Assim que a primeira súmula for confirmada, o pódio e a tabela ganham vida." />}
-        <div className="stat-grid season-stats"><span><b>{totals.points}</b> pontos</span><span><b>{totals.games}</b> jogos</span><span><b>{totals.goals}</b> gols</span><span><b>{totals.presences}</b> presenças</span></div>
-        <div className="table-cards">
-          {standings.map((row) => (
-            <article className="row-card" key={row.user_id}>
-              <button className="name-link strong" onClick={() => onOpenProfile(row.user_id)}>{row.position}º {row.name}</button>
-              <span>{row.total_points} pts</span>
-              <small>J {row.games_played} • V {row.wins} • E {row.draws} • D {row.losses} • Pres. sem jogar {row.presences} • Mens. {row.paid_months}</small>
-              <small>Equipe: {row.team_goals_for} pró • {row.team_goals_against} contra • saldo {row.team_goal_balance} • aproveit. {formatPercent(row.games_played ? ((row.wins * 3 + row.draws) / (row.games_played * 3)) * 100 : 0)}</small>
-            </article>
-          ))}
-        </div>
-      </section>
-      <section className="card compact">
-        <h2>Corridas individuais</h2>
-        <div className="ranking-grid">
-          <MiniRanking title="Artilharia" rows={rankings.goals.map((item) => ({ userId: item.userId, name: item.name, value: item.netGoals, detail: `${item.goals} gols • ${item.ownGoals} contra • média ${formatAverage(item.average)}` }))} suffix="saldo" onOpenProfile={onOpenProfile} />
-          <MiniRanking title="Assistência" rows={rankings.assists.map((item) => ({ userId: item.userId, name: item.name, value: item.assists, detail: `${item.gamesPlayed} jogos • média ${formatAverage(item.average)}` }))} suffix="assist." onOpenProfile={onOpenProfile} />
-          <MiniRanking title="Assiduidade" rows={rankings.presence.map((item) => ({ userId: item.userId, name: item.name, value: item.total, detail: `${item.gamesPlayed} jogos • ${item.presences} pres. • ${formatAverage(item.percentage)}%` }))} suffix="total" onOpenProfile={onOpenProfile} />
-          <MiniRanking title="Cartões" rows={rankings.cards.map((item) => ({ userId: item.userId, name: item.name, value: item.cardPoints, detail: `${item.totalCards} cartões • média ${formatAverage(item.average)}` }))} suffix="pts" onOpenProfile={onOpenProfile} />
-        </div>
-        <ResponsiveContainer width="100%" height={160}>
-          <BarChart data={standings.slice(0, 8)}>
-            <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
-            <XAxis dataKey="name" hide />
-            <YAxis hide />
-            <Tooltip />
-            <Bar dataKey="total_points" fill="#3b82f6" radius={[8, 8, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      </section>
-      <section className="card compact span">
-        <h2>Suspensões abertas</h2>
-        <div className="chips">
-          {suspensions.length === 0 ? <span className="muted">Nenhuma suspensão pendente.</span> : suspensions.map((item) => <span className="chip danger" key={item.id}>{item.userName} • {formatCardReason(item.reason)}</span>)}
-        </div>
-        {canCoordinate && suspensions.length > 0 && <div className="table-cards">{suspensions.map((item) => <article className="row-card" key={`serve-${item.id}`}><strong>{item.userName}</strong><span>{formatCardReason(item.reason)}</span><small>Gerada em: {item.triggerMatchTitle}</small><select disabled={!confirmedMatches.length} defaultValue="" onChange={(event) => void serveSuspension(item.id, event.target.value)}><option value="">Marcar como cumprida em...</option>{confirmedMatches.map((match) => <option key={match.id} value={match.id}>{match.title} • {match.matchDate?.slice(0, 10)}</option>)}</select></article>)}</div>}
-      </section>
-    </div>
-  );
-}
-
-function EmptyState({ title, text }: { title: string; text: string }) {
-  return <div className="empty-state"><strong>{title}</strong><span>{text}</span></div>;
-}
-
-function MiniRanking({ title, rows, suffix, onOpenProfile }: { title: string; rows: Array<{ userId: string; name: string; value: number; detail?: string }>; suffix: string; onOpenProfile: (userId: string) => void }) {
-  return <div className="mini-rank"><strong>{title}</strong>{rows.length === 0 ? <small className="muted">Aguardando a bola rolar.</small> : rows.slice(0, 4).map((row, index) => <span key={row.userId}>{index + 1}. <button className="name-link" onClick={() => onOpenProfile(row.userId)}>{row.name}</button> <b>{row.value} {suffix}</b><small>{row.detail}</small></span>)}</div>;
+  return <section className="card compact suspension-panel"><div className="card-head"><div><h2>Suspensões</h2><p className="muted">Pendências disciplinares da temporada.</p></div><span className={`status ${suspensions.length ? 'danger' : 'open'}`}>{suspensions.length}</span></div>{suspensions.length === 0 ? <EmptyState title="Sem suspensões" text="Ninguém pendurado para cumprir jogo. Milagre da várzea organizada." /> : <div className="suspension-list">{suspensions.map((item) => <article className="suspension-row" key={item.id}><strong>{item.userName}</strong><span>{formatCardReason(item.reason)}</span><small>Origem: {item.triggerMatchTitle}</small>{canCoordinate && <select disabled={!confirmedMatches.length} defaultValue="" onChange={(event) => void serveSuspension(item.id, event.target.value)}><option value="">Cumpriu em...</option>{confirmedMatches.map((match) => <option key={match.id} value={match.id}>{match.title} • {match.matchDate?.slice(0, 10)}</option>)}</select>}</article>)}</div>}</section>;
 }
 
 function ProfilesPanel({ api, users, currentUserId, initialUserId, onCurrentUserUpdated }: { api: ApiClient; users: User[]; currentUserId: string; initialUserId: string; onCurrentUserUpdated: (user: User) => void }) {
@@ -579,7 +542,9 @@ function MatchesPanel({ api, canCoordinate, users, matches, activeSeasonId, onRe
     await onReload();
   }
 
-  return <section className="card compact matches-report"><div className="card-head"><div><h2>Jogos da temporada</h2><p className="muted">Lista sutil de partidas. Clique para abrir a súmula em modal; edição fica restrita a ADMIN/COORDENADOR.</p></div>{canCoordinate && <OperationalMatchDialog api={api} users={users} activeSeasonId={activeSeasonId} onDone={onReload} />}</div>{matchMessage && <button className="alert" onClick={() => setMatchMessage('')}>{matchMessage}</button>}<div className="table-cards match-list">{matches.length === 0 ? <EmptyState title="Nenhum jogo criado" text="Use Criar jogo para montar a súmula operacional desta rodada." /> : matches.map((match) => <button className="row-card as-button match-row" key={match.id} onClick={() => openMatch(match.id)}><strong>{match.title}</strong><span>{match.teamAScore} x {match.teamBScore}</span><small>{match.teamAName} × {match.teamBName} • {match.status} • {match.matchDate?.slice(0, 10)}</small></button>)}</div>{selectedMatch && <div className="modal match-modal"><section className="match-modal-card"><div className="card-head"><div><h2>{selectedMatch.title}</h2><p className="muted">Súmula operacional • {selectedMatch.matchDate?.slice(0, 10)} • {selectedMatch.status}</p></div><button className="ghost" onClick={() => { setSelectedMatch(null); setCancelConfirm(false); }}>Fechar</button></div><div className="match-ops-grid"><section className="score-editor broadcast-panel"><div className="scoreboard"><b>{selectedMatch.teamAName}</b><strong>{selectedMatch.status === 'CONFIRMED' ? selectedMatch.teamAScore : selectedMatch.draftTeamAScore ?? selectedMatch.teamAScore} x {selectedMatch.status === 'CONFIRMED' ? selectedMatch.teamBScore : selectedMatch.draftTeamBScore ?? selectedMatch.teamBScore}</strong><b>{selectedMatch.teamBName}</b></div><div className="clock">{String(Math.floor(seconds / 60)).padStart(2, '0')}:{String(seconds % 60).padStart(2, '0')}</div>{selectedMatch.startedAt && <p className="muted">Jogo iniciado oficialmente em {formatBrasiliaTime(selectedMatch.startedAt)} — horário de Brasília. A quadra encerra às 21:00; tempo útil desta súmula: {selectedMatch.availableMinutes ?? 60} min.</p>}<div className="actions"><button className="primary" disabled={selectedMatch.status === 'RUNNING'} onClick={() => setClockRunning((value) => !value)}>{selectedMatch.status === 'RUNNING' ? 'Cronômetro oficial ativo' : clockRunning ? 'Pausar rascunho' : 'Iniciar rascunho'}</button><button className="ghost" disabled={selectedMatch.status === 'RUNNING'} onClick={() => setSeconds(0)}>Zerar</button>{canCoordinate && selectedMatch.status === 'DRAFT' && <button className="primary" onClick={() => void startSelectedMatch()}>Jogo iniciado</button>}{canCoordinate && ['DRAFT', 'RUNNING', 'SUBMITTED'].includes(selectedMatch.status) && (cancelConfirm ? <><button className="ghost danger-action" onClick={() => void cancelSelectedMatch()}>Confirmar cancelamento</button><button className="ghost" onClick={() => setCancelConfirm(false)}>Manter súmula</button></> : <button className="ghost danger-action" onClick={() => setCancelConfirm(true)}>Cancelar súmula</button>)}</div>{cancelConfirm && <p className="muted">Cancelar tira esta súmula do fluxo operacional e ela não pontua a temporada.</p>}<SubstitutionManager rotation={selectedMatch.rotation} currentMinute={Math.floor(seconds / 60)} /></section><section className="match-sheet-panel">{canCoordinate && ['DRAFT', 'RUNNING', 'SUBMITTED'].includes(selectedMatch.status) && <ExistingLineupEditor api={api} match={selectedMatch} users={users} onSaved={async () => { await openMatch(selectedMatch.id); await onReload(); }} />}<div className="chips">{selectedMatch.events.map((event, index) => <span className="chip" key={index}>{event.minute}' {eventLabel(event.eventType)}</span>)}</div>{canCoordinate && selectedMatch.status !== 'CANCELLED' && <MatchScoreEditor api={api} match={selectedMatch} users={users} clockSeconds={seconds} clockRunning={clockRunning} onSaved={async () => { await openMatch(selectedMatch.id); await onReload(); }} />}<CorrectionHistory corrections={selectedMatch.corrections ?? []} /></section></div></section></div>}</section>;
+  const sortedMatches = [...matches].sort((left, right) => new Date(right.matchDate).getTime() - new Date(left.matchDate).getTime());
+
+  return <section className="card compact matches-report"><div className="card-head"><div><h2>Histórico dos jogos</h2><p className="muted">Mais recente primeiro. Clique na linha para abrir placar, súmula e acontecimentos.</p></div>{canCoordinate && <OperationalMatchDialog api={api} users={users} activeSeasonId={activeSeasonId} onDone={onReload} />}</div>{matchMessage && <button className="alert" onClick={() => setMatchMessage('')}>{matchMessage}</button>}<div className="table-cards match-list">{sortedMatches.length === 0 ? <EmptyState title="Nenhum jogo criado" text="Use Criar jogo para montar a súmula operacional desta rodada." /> : sortedMatches.map((match) => <button className="row-card as-button match-row" key={match.id} onClick={() => openMatch(match.id)}><strong>{match.title}</strong><span>{match.teamAScore} x {match.teamBScore}</span><small>{match.teamAName} × {match.teamBName} • {match.status} • {match.matchDate?.slice(0, 10)}</small></button>)}</div>{selectedMatch && <div className="modal match-modal"><section className="match-modal-card"><div className="card-head"><div><h2>{selectedMatch.title}</h2><p className="muted">Súmula operacional • {selectedMatch.matchDate?.slice(0, 10)} • {selectedMatch.status}</p></div><button className="ghost" onClick={() => { setSelectedMatch(null); setCancelConfirm(false); }}>Fechar</button></div><div className="match-ops-grid"><section className="score-editor broadcast-panel"><div className="scoreboard"><b>{selectedMatch.teamAName}</b><strong>{selectedMatch.status === 'CONFIRMED' ? selectedMatch.teamAScore : selectedMatch.draftTeamAScore ?? selectedMatch.teamAScore} x {selectedMatch.status === 'CONFIRMED' ? selectedMatch.teamBScore : selectedMatch.draftTeamBScore ?? selectedMatch.teamBScore}</strong><b>{selectedMatch.teamBName}</b></div><div className="clock">{String(Math.floor(seconds / 60)).padStart(2, '0')}:{String(seconds % 60).padStart(2, '0')}</div>{selectedMatch.startedAt && <p className="muted">Jogo iniciado oficialmente em {formatBrasiliaTime(selectedMatch.startedAt)} — horário de Brasília. A quadra encerra às 21:00; tempo útil desta súmula: {selectedMatch.availableMinutes ?? 60} min.</p>}<div className="actions"><button className="primary" disabled={selectedMatch.status === 'RUNNING'} onClick={() => setClockRunning((value) => !value)}>{selectedMatch.status === 'RUNNING' ? 'Cronômetro oficial ativo' : clockRunning ? 'Pausar rascunho' : 'Iniciar rascunho'}</button><button className="ghost" disabled={selectedMatch.status === 'RUNNING'} onClick={() => setSeconds(0)}>Zerar</button>{canCoordinate && selectedMatch.status === 'DRAFT' && <button className="primary" onClick={() => void startSelectedMatch()}>Jogo iniciado</button>}{canCoordinate && ['DRAFT', 'RUNNING', 'SUBMITTED'].includes(selectedMatch.status) && (cancelConfirm ? <><button className="ghost danger-action" onClick={() => void cancelSelectedMatch()}>Confirmar cancelamento</button><button className="ghost" onClick={() => setCancelConfirm(false)}>Manter súmula</button></> : <button className="ghost danger-action" onClick={() => setCancelConfirm(true)}>Cancelar súmula</button>)}</div>{cancelConfirm && <p className="muted">Cancelar tira esta súmula do fluxo operacional e ela não pontua a temporada.</p>}<SubstitutionManager rotation={selectedMatch.rotation} currentMinute={Math.floor(seconds / 60)} /></section><section className="match-sheet-panel">{canCoordinate && ['DRAFT', 'RUNNING', 'SUBMITTED'].includes(selectedMatch.status) && <ExistingLineupEditor api={api} match={selectedMatch} users={users} onSaved={async () => { await openMatch(selectedMatch.id); await onReload(); }} />}<div className="chips">{selectedMatch.events.map((event, index) => <span className="chip" key={index}>{event.minute}' {eventLabel(event.eventType)}</span>)}</div>{canCoordinate && selectedMatch.status !== 'CANCELLED' && <MatchScoreEditor api={api} match={selectedMatch} users={users} clockSeconds={seconds} clockRunning={clockRunning} onSaved={async () => { await openMatch(selectedMatch.id); await onReload(); }} />}<CorrectionHistory corrections={selectedMatch.corrections ?? []} /></section></div></section></div>}</section>;
 }
 
 function ExistingLineupEditor({ api, match, users, onSaved }: { api: ApiClient; match: MatchDetail; users: User[]; onSaved: () => Promise<void> }) {
